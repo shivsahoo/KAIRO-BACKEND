@@ -1,7 +1,7 @@
 import { aiClient, provider } from '../config/ai.config.js';
 
 /**
- * Generate persona response based on message and context
+ * Generate persona response based on message and context (non-streaming)
  */
 export async function generatePersonaResponse(message, persona, context = {}) {
   // If no AI client configured, return mock response
@@ -93,6 +93,158 @@ export async function generatePersonaResponse(message, persona, context = {}) {
       persona: persona || 'Manager',
       reply: generateMockPersonaResponse(message, persona),
     };
+  }
+}
+
+/**
+ * Stream persona response from OpenAI
+ * @param {string} message - User message
+ * @param {string} persona - Persona name (e.g., 'Manager')
+ * @param {Object} context - Context object with conversationHistory, currentTask, etc.
+ * @param {Function} onChunk - Callback function called with each chunk: (chunk: string) => void
+ * @returns {Promise<string>} - Full response text
+ */
+export async function streamPersonaResponse(message, persona, context = {}, onChunk = null) {
+  // If no AI client configured, return mock response
+  if (!aiClient) {
+    console.warn('⚠️  No AI client configured - using mock response');
+    console.warn('⚠️  Please set OPENAI_API_KEY or ANTHROPIC_API_KEY in your .env file');
+    const mockReply = generateMockPersonaResponse(message, persona);
+    if (onChunk) {
+      // Simulate streaming for mock response
+      for (const char of mockReply) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        onChunk(char);
+      }
+    }
+    return {
+      persona: persona || 'Manager',
+      reply: mockReply,
+    };
+  }
+  
+  console.log(`🤖 Streaming response from ${provider.toUpperCase()} for persona: ${persona}`);
+
+  const systemPrompt = getPersonaSystemPrompt(persona, context);
+  const conversationContext = context.conversationHistory || [];
+
+  try {
+    if (provider === 'openai') {
+      // Build conversation history
+      const conversationMessages = conversationContext.length > 0
+        ? conversationContext.slice(-10).map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.text,
+          }))
+        : [];
+
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        ...conversationMessages,
+        { role: 'user', content: message },
+      ];
+
+      // Create streaming response
+      const stream = await aiClient.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages,
+        temperature: 0.85,
+        max_tokens: 700,
+        presence_penalty: 0.3,
+        frequency_penalty: 0.2,
+        stream: true, // Enable streaming
+      });
+
+      let fullResponse = '';
+
+      // Process stream chunks
+      let chunkCount = 0;
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          fullResponse += content;
+          chunkCount++;
+          if (onChunk) {
+            onChunk(content);
+          }
+        }
+      }
+
+      console.log(`✅ Received ${chunkCount} chunks from OpenAI, total length: ${fullResponse.length}`);
+      const reply = fullResponse.trim();
+
+      // If the conversation is just starting or needs a question, generate a contextual question
+      if (shouldGenerateQuestion(conversationContext, reply)) {
+        const question = await generateContextualQuestion(persona, context, reply);
+        return {
+          persona: persona || 'Manager',
+          reply: question || reply,
+        };
+      }
+
+      return {
+        persona: persona || 'Manager',
+        reply: reply,
+      };
+    } else if (provider === 'anthropic') {
+      // Anthropic streaming (if needed in future)
+      const messages = conversationContext.slice(-10).map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text,
+      }));
+
+      const response = await aiClient.messages.create({
+        model: 'claude-3-opus-20240229',
+        max_tokens: 600,
+        system: systemPrompt,
+        messages: [
+          ...messages,
+          { role: 'user', content: message },
+        ],
+      });
+
+      const reply = response.content[0].text.trim();
+      
+      if (shouldGenerateQuestion(conversationContext, reply)) {
+        const question = await generateContextualQuestion(persona, context, reply);
+        return {
+          persona: persona || 'Manager',
+          reply: question || reply,
+        };
+      }
+
+      return {
+        persona: persona || 'Manager',
+        reply: reply,
+      };
+    }
+  } catch (error) {
+    console.error('❌ AI Orchestrator Streaming Error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+    });
+    
+    // Only use mock if it's a configuration error, otherwise throw
+    if (error.message?.includes('API key') || error.message?.includes('authentication')) {
+      console.error('⚠️  API key issue - using mock response');
+      const mockReply = generateMockPersonaResponse(message, persona);
+      if (onChunk) {
+        // Simulate streaming for error fallback
+        for (const char of mockReply) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          onChunk(char);
+        }
+      }
+      return {
+        persona: persona || 'Manager',
+        reply: mockReply,
+      };
+    }
+    
+    // Re-throw other errors so they can be handled upstream
+    throw error;
   }
 }
 
