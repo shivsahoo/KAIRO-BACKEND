@@ -1,11 +1,11 @@
 import express from 'express';
 import * as simulationController from '../controllers/simulation.controller.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-// Note: Authentication is handled inside the controller for flexibility
-// This allows simulation to work without auth for development
-// In production, add authentication middleware here
+// All routes require authentication
+router.use(authenticate);
 
 // Routes
 router.post('/start', simulationController.startSimulation);

@@ -1,0 +1,690 @@
+{
+	"info": {
+		"_postman_id": "kairo-api-collection",
+		"name": "KAIRO API Collection",
+		"description": "Complete API collection for KAIRO Backend - AI HR Simulation Platform\n\n## Base URL\nDefault: `http://localhost:3000`\n\n## Authentication\nMost endpoints require Bearer token authentication. Use the Login endpoint first to get a token, which will be automatically saved to the `bearer_token` variable.\n\n## Variables\n- `base_url`: Base URL of the API (default: http://localhost:3000)\n- `bearer_token`: JWT token for authentication (auto-set after login)\n- `session_id`: Current simulation session ID (set after starting simulation)\n- `user_id`: Current user ID (set after login)\n\n## Use Cases\n1. **Authentication**: Sign up, login, and get current user\n2. **Simulation**: Start, manage, and end simulation sessions\n3. **Tasks**: Get current task, submit tasks, and view all tasks\n4. **Upload**: Upload files and audio\n5. **Audio**: Speech-to-text and text-to-speech conversion",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Sign Up",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    if (response.token) {",
+									"        pm.collectionVariables.set('bearer_token', response.token);",
+									"        pm.collectionVariables.set('user_id', response.user.id);",
+									"        console.log('Token saved:', response.token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\",\n    \"password\": \"password123\",\n    \"name\": \"John Doe\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/signup",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"signup"
+							]
+						},
+						"description": "Register a new user account.\n\n**Request Body:**\n- `email` (string, required): Valid email address\n- `password` (string, required): Minimum 6 characters\n- `name` (string, required): User's full name\n\n**Response:**\n- Returns JWT token and user information\n- Token is automatically saved to `bearer_token` variable"
+					},
+					"response": []
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.token) {",
+									"        pm.collectionVariables.set('bearer_token', response.token);",
+									"        pm.collectionVariables.set('user_id', response.user.id);",
+									"        console.log('✅ Login successful! Token saved to bearer_token variable');",
+									"        console.log('User ID:', response.user.id);",
+									"        console.log('User Name:', response.user.name);",
+									"    }",
+									"} else {",
+									"    console.log('❌ Login failed:', pm.response.json());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\",\n    \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						},
+						"description": "Login with email and password to get JWT authentication token.\n\n**Request Body:**\n- `email` (string, required): User's email address\n- `password` (string, required): User's password\n\n**Response:**\n- Returns JWT token and user information\n- Token is automatically saved to `bearer_token` variable via post-script\n- User ID is saved to `user_id` variable\n\n**Post-Script:**\nAutomatically extracts token from response and saves it to collection variable `bearer_token` for use in subsequent authenticated requests."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/auth/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"me"
+							]
+						},
+						"description": "Get current authenticated user's information.\n\n**Authentication:**\n- Requires Bearer token in Authorization header\n\n**Response:**\n- Returns user details (id, email, name, roleSelected, authProvider)"
+					},
+					"response": []
+				},
+				{
+					"name": "Google OAuth",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"token\": \"google_oauth_token\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/google",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"google"
+							]
+						},
+						"description": "Google OAuth authentication (stub - not yet implemented).\n\n**Status:**\n- Currently returns 501 Not Implemented"
+					},
+					"response": []
+				}
+			],
+			"description": "Authentication endpoints for user registration, login, and profile management."
+		},
+		{
+			"name": "Simulation",
+			"item": [
+				{
+					"name": "Start Simulation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    if (response.sessionId) {",
+									"        pm.collectionVariables.set('session_id', response.sessionId);",
+									"        console.log('✅ Simulation started! Session ID saved:', response.sessionId);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"role\": \"HR Executive\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/simulation/start",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"simulation",
+								"start"
+							]
+						},
+						"description": "Start a new simulation session.\n\n**Request Body:**\n- `role` (string, required): User's role - must be either \"HR Executive\" or \"Business Analyst\"\n\n**Response:**\n- Returns session ID, context, initial message, and first task\n- Session ID is automatically saved to `session_id` variable\n\n**Note:**\n- Creates a new active simulation session\n- Automatically assigns the first task\n- Sends initial welcome message from Manager persona"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Simulation Session",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/simulation/:id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"simulation",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{session_id}}",
+									"description": "Simulation session ID"
+								}
+							]
+						},
+						"description": "Get simulation session details and messages.\n\n**Path Parameters:**\n- `id` (string, required): Simulation session ID\n\n**Response:**\n- Returns session object with timeline and all messages\n- Includes user information and session status"
+					},
+					"response": []
+				},
+				{
+					"name": "Generate Final Report (PDF)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/simulation/:id/final-report",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"simulation",
+								":id",
+								"final-report"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{session_id}}",
+									"description": "Simulation session ID"
+								}
+							]
+						},
+						"description": "Generate and download final PDF report for a simulation session.\n\n**Path Parameters:**\n- `id` (string, required): Simulation session ID\n\n**Response:**\n- Returns PDF file as binary download\n- Filename: `kairo-report-{sessionId}.pdf`\n\n**Note:**\n- Includes all messages, task submissions, and evaluations\n- Comprehensive performance report"
+					},
+					"response": []
+				},
+				{
+					"name": "End Simulation",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/simulation/:id/end",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"simulation",
+								":id",
+								"end"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "{{session_id}}",
+									"description": "Simulation session ID"
+								}
+							]
+						},
+						"description": "End an active simulation session.\n\n**Path Parameters:**\n- `id` (string, required): Simulation session ID\n\n**Response:**\n- Marks session as ended\n- Updates timeline with session_ended event\n- Sets endedAt timestamp"
+					},
+					"response": []
+				}
+			],
+			"description": "Simulation session management endpoints for starting, viewing, and ending simulation sessions."
+		},
+		{
+			"name": "Tasks",
+			"item": [
+				{
+					"name": "Get Current Task",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/tasks/current",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"tasks",
+								"current"
+							]
+						},
+						"description": "Get the current active task for the user's active simulation session.\n\n**Authentication:**\n- Requires Bearer token\n- Requires active simulation session\n\n**Response:**\n- Returns current task details (id, title, description, level, expectedOutput, status)\n- Returns task index\n- Returns null if all tasks are completed"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Task",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"Task submission text content\",\n    \"files\": [\n        \"https://example.com/file1.pdf\",\n        \"https://example.com/file2.docx\"\n    ],\n    \"audioUrl\": \"https://example.com/audio.mp3\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/tasks/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"tasks",
+								"submit"
+							]
+						},
+						"description": "Submit a task for evaluation.\n\n**Request Body:**\n- `text` (string, optional): Text submission content\n- `files` (array, optional): Array of file URLs\n- `audioUrl` (string, optional): URL to audio file\n\n**Response:**\n- Returns submission details with AI evaluation (score, feedback, improvements)\n- Returns next task if available\n- Returns `completed: true` if all tasks are done\n\n**Note:**\n- Automatically evaluates submission using AI\n- Moves to next task after submission\n- Emits WebSocket events for task scoring and task assignment"
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Tasks",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/tasks/all",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"tasks",
+								"all"
+							]
+						},
+						"description": "Get all available tasks in the system.\n\n**Authentication:**\n- Requires Bearer token\n\n**Response:**\n- Returns array of all tasks with details (id, title, description, level, expectedOutput)"
+					},
+					"response": []
+				}
+			],
+			"description": "Task management endpoints for viewing and submitting tasks during simulation."
+		},
+		{
+			"name": "Upload",
+			"item": [
+				{
+					"name": "Upload File",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/upload/file",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"upload",
+								"file"
+							]
+						},
+						"description": "Upload a file to the server.\n\n**Request:**\n- Content-Type: multipart/form-data\n- Field name: `file`\n- Accepts any file type\n\n**Response:**\n- Returns file URL, filename, size, and mimetype\n- File is stored in S3 or local storage\n\n**Note:**\n- Use the returned URL in task submissions"
+					},
+					"response": []
+				},
+				{
+					"name": "Upload Audio",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "audio",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/upload/audio",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"upload",
+								"audio"
+							]
+						},
+						"description": "Upload an audio file to the server.\n\n**Request:**\n- Content-Type: multipart/form-data\n- Field name: `audio`\n- Accepts audio file formats\n\n**Response:**\n- Returns audio URL, filename, size, and mimetype\n- Audio is stored in S3 or local storage\n\n**Note:**\n- Use the returned URL in task submissions or speech-to-text requests"
+					},
+					"response": []
+				}
+			],
+			"description": "File and audio upload endpoints for submitting documents and audio files."
+		},
+		{
+			"name": "Audio",
+			"item": [
+				{
+					"name": "Speech to Text (STT)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"audioUrl\": \"https://example.com/audio.mp3\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/audio/stt",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"audio",
+								"stt"
+							]
+						},
+						"description": "Convert speech to text (stub implementation).\n\n**Request Body:**\n- `audioUrl` (string, required): URL to audio file\n\n**Response:**\n- Returns transcribed text and confidence score\n\n**Status:**\n- Currently returns stub response\n- In production, would integrate with Whisper API or similar STT service"
+					},
+					"response": []
+				},
+				{
+					"name": "Text to Speech (TTS)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"Hello, this is a test message\",\n    \"voice\": \"default\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/audio/tts",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"audio",
+								"tts"
+							]
+						},
+						"description": "Convert text to speech (stub implementation).\n\n**Request Body:**\n- `text` (string, required): Text to convert to speech\n- `voice` (string, optional): Voice type (default: \"default\")\n\n**Response:**\n- Returns audio URL, text, voice, and estimated duration\n\n**Status:**\n- Currently returns stub response\n- In production, would integrate with OpenAI TTS, Google TTS, or similar service"
+					},
+					"response": []
+				}
+			],
+			"description": "Audio processing endpoints for speech-to-text and text-to-speech conversion (stub implementations)."
+		},
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/health",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"health"
+					]
+				},
+				"description": "Health check endpoint to verify server is running.\n\n**Response:**\n- Returns status and message\n- No authentication required"
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "bearer_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "session_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
+
