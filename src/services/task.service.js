@@ -1,0 +1,77 @@
+// HR Track Task Skeleton - EXACT as specified
+export const HR_TASKS = [
+  {
+    id: 'hr_t1',
+    level: 'beginner',
+    title: 'Write a Job Description for an HR Intern',
+    description: 'Draft a clear JD including responsibilities, skills, and qualifications.',
+    expectedOutput: 'A structured JD in text or DOCX/PDF',
+  },
+  {
+    id: 'hr_t2',
+    level: 'beginner',
+    title: 'Screen 10 resumes & shortlist top 3 candidates',
+    description: 'Review provided resumes and justify your selection.',
+    expectedOutput: 'Shortlist + justification',
+  },
+  {
+    id: 'hr_t3',
+    level: 'intermediate',
+    title: 'Handle a conflict between two teammates',
+    description: 'Chat simulation between two employees arguing.',
+    expectedOutput: 'Conflict summary + action plan',
+  },
+  {
+    id: 'hr_t4',
+    level: 'advanced',
+    title: 'Create a complete HR policy (Remote Work Policy)',
+    description: 'Develop a formal HR policy with rules and exceptions.',
+    expectedOutput: 'PDF / DOCX policy document',
+  },
+];
+
+/**
+ * Get task by ID
+ */
+export function getTaskById(taskId) {
+  return HR_TASKS.find(task => task.id === taskId);
+}
+
+/**
+ * Get task by index
+ */
+export function getTaskByIndex(index) {
+  return HR_TASKS[index] || null;
+}
+
+/**
+ * Get all tasks
+ */
+export function getAllTasks() {
+  return HR_TASKS;
+}
+
+/**
+ * Get current task for simulation
+ */
+export function getCurrentTask(taskIndex) {
+  if (taskIndex >= HR_TASKS.length) {
+    return null; // All tasks completed
+  }
+  return HR_TASKS[taskIndex];
+}
+
+/**
+ * Check if task exists
+ */
+export function taskExists(taskId) {
+  return HR_TASKS.some(task => task.id === taskId);
+}
+
+/**
+ * Get next task index
+ */
+export function getNextTaskIndex(currentIndex) {
+  return currentIndex + 1;
+}
+

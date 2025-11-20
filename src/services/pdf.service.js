@@ -1,0 +1,206 @@
+import PDFDocument from 'pdfkit';
+import SimulationSession from '../models/SimulationSession.model.js';
+import TaskSubmission from '../models/TaskSubmission.model.js';
+import { getTaskById } from './task.service.js';
+
+/**
+ * Generate PDF report for simulation session
+ */
+export async function generatePDFReport(session, messages, submissions) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        margin: 50,
+        size: 'A4',
+      });
+
+      const buffers = [];
+      doc.on('data', buffers.push.bind(buffers));
+      doc.on('end', () => {
+        const pdfBuffer = Buffer.concat(buffers);
+        resolve(pdfBuffer);
+      });
+      doc.on('error', reject);
+
+      // Header
+      doc.fontSize(24).font('Helvetica-Bold').text('KAIRO Performance Report', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(12).font('Helvetica').text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+      doc.moveDown(2);
+
+      // User Details
+      doc.fontSize(16).font('Helvetica-Bold').text('User Details');
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica');
+      doc.text(`Name: ${session.userId.name || 'N/A'}`);
+      doc.text(`Email: ${session.userId.email || 'N/A'}`);
+      doc.text(`Role: ${session.role}`);
+      doc.text(`Session Started: ${session.startedAt.toLocaleString()}`);
+      if (session.endedAt) {
+        doc.text(`Session Ended: ${session.endedAt.toLocaleString()}`);
+        const duration = Math.floor((session.endedAt - session.startedAt) / 1000 / 60);
+        doc.text(`Duration: ${duration} minutes`);
+      }
+      doc.moveDown(2);
+
+      // Tasks Completed
+      doc.fontSize(16).font('Helvetica-Bold').text('Tasks Completed');
+      doc.moveDown(0.5);
+      
+      if (submissions.length === 0) {
+        doc.fontSize(12).font('Helvetica').text('No tasks completed.', { color: '#666' });
+      } else {
+        submissions.forEach((submission, index) => {
+          const task = getTaskById(submission.taskId);
+          
+          doc.fontSize(14).font('Helvetica-Bold').text(`Task ${index + 1}: ${task?.title || submission.taskId}`);
+          doc.fontSize(12).font('Helvetica');
+          doc.text(`Level: ${task?.level || 'N/A'}`);
+          doc.text(`Score: ${submission.score || 'Not scored'}/10`);
+          
+          if (submission.feedback) {
+            doc.moveDown(0.3);
+            doc.fontSize(11).font('Helvetica-Bold').text('Feedback:');
+            doc.fontSize(11).font('Helvetica').text(submission.feedback, { indent: 20 });
+          }
+          
+          if (submission.improvements && submission.improvements.length > 0) {
+            doc.moveDown(0.3);
+            doc.fontSize(11).font('Helvetica-Bold').text('Improvements:');
+            submission.improvements.forEach((improvement) => {
+              doc.fontSize(11).font('Helvetica').text(`• ${improvement}`, { indent: 20 });
+            });
+          }
+          
+          doc.moveDown(1);
+        });
+      }
+
+      // Calculate overall score
+      if (submissions.length > 0) {
+        const scores = submissions.filter(s => s.score !== undefined && s.score !== null).map(s => s.score);
+        if (scores.length > 0) {
+          const averageScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+          doc.moveDown(1);
+          doc.fontSize(16).font('Helvetica-Bold').text('Overall Performance');
+          doc.moveDown(0.5);
+          doc.fontSize(14).font('Helvetica').text(`Average Score: ${averageScore.toFixed(2)}/10`);
+        }
+      }
+
+      // Strengths
+      doc.moveDown(2);
+      doc.fontSize(16).font('Helvetica-Bold').text('Strengths');
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica');
+      
+      const strengths = extractStrengths(submissions, messages);
+      if (strengths.length > 0) {
+        strengths.forEach((strength) => {
+          doc.text(`• ${strength}`);
+        });
+      } else {
+        doc.text('Strengths will be identified as you complete more tasks.', { color: '#666' });
+      }
+
+      // Improvement Areas
+      doc.moveDown(2);
+      doc.fontSize(16).font('Helvetica-Bold').text('Improvement Areas');
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica');
+      
+      const improvements = extractImprovements(submissions);
+      if (improvements.length > 0) {
+        improvements.forEach((improvement) => {
+          doc.text(`• ${improvement}`);
+        });
+      } else {
+        doc.text('Continue practicing to identify areas for improvement.', { color: '#666' });
+      }
+
+      // Summary
+      doc.moveDown(2);
+      doc.fontSize(16).font('Helvetica-Bold').text('Summary');
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica');
+      doc.text(generateSummary(session, submissions, messages), { align: 'justify' });
+
+      // Footer
+      doc.fontSize(10).font('Helvetica').text(
+        'This report was generated by KAIRO - AI HR Simulation Platform',
+        { align: 'center', color: '#666' },
+        doc.page.margins.bottom + 20
+      );
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+/**
+ * Extract strengths from submissions and messages
+ */
+function extractStrengths(submissions, messages) {
+  const strengths = [];
+  
+  // From submissions
+  submissions.forEach((submission) => {
+    if (submission.score && submission.score >= 8) {
+      strengths.push('High performance on task completion');
+    }
+    if (submission.feedback && submission.feedback.toLowerCase().includes('excellent')) {
+      strengths.push('Demonstrated strong understanding of task requirements');
+    }
+  });
+
+  // From messages
+  const userMessages = messages.filter(m => m.sender === 'user');
+  if (userMessages.length > 5) {
+    strengths.push('Active engagement in conversations');
+  }
+
+  return strengths.length > 0 ? strengths : ['Good participation in simulation'];
+}
+
+/**
+ * Extract improvements from submissions
+ */
+function extractImprovements(submissions) {
+  const improvements = [];
+  
+  submissions.forEach((submission) => {
+    if (submission.improvements && submission.improvements.length > 0) {
+      improvements.push(...submission.improvements);
+    }
+  });
+
+  // Remove duplicates
+  return [...new Set(improvements)];
+}
+
+/**
+ * Generate summary
+ */
+function generateSummary(session, submissions, messages) {
+  const taskCount = submissions.length;
+  const messageCount = messages.length;
+  const userMessageCount = messages.filter(m => m.sender === 'user').length;
+  
+  let summary = `You completed ${taskCount} task(s) during this simulation session. `;
+  summary += `You exchanged ${messageCount} messages, with ${userMessageCount} from you. `;
+  
+  if (submissions.length > 0) {
+    const scores = submissions.filter(s => s.score !== undefined).map(s => s.score);
+    if (scores.length > 0) {
+      const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+      summary += `Your average score was ${avgScore.toFixed(2)}/10. `;
+    }
+  }
+  
+  summary += 'Continue practicing to improve your skills and demonstrate proficiency in HR operations.';
+  
+  return summary;
+}
+
