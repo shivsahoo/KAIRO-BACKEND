@@ -61,40 +61,13 @@ export const startSimulation = async (req, res) => {
   try {
     const { role } = req.body;
     
+    // Authentication middleware ensures req.user exists
+    const userId = req.user._id;
+    const userName = req.user.name;
+    
     // Check if MongoDB is connected
     const mongoose = (await import('mongoose')).default;
     const isDbConnected = mongoose.connection.readyState === 1;
-    
-    // Handle authentication - use existing user or create demo user
-    let userId = req.user?.id;
-    let userName = req.user?.name || 'Demo User';
-    
-    if (!userId && isDbConnected) {
-      // Create a temporary demo user for development (only if DB is connected)
-      try {
-        const User = (await import('../models/User.model.js')).default;
-        let tempUser = await User.findOne({ email: 'demo@kairo.dev' });
-        if (!tempUser) {
-          tempUser = await User.create({
-            email: 'demo@kairo.dev',
-            name: 'Demo User',
-            password: 'demo123',
-            authProvider: 'local',
-          });
-        }
-        userId = tempUser._id;
-        userName = tempUser.name;
-      } catch (dbError) {
-        console.error('Database error creating user:', dbError.message);
-        // Use mock user ID if DB fails
-        userId = 'demo-user-id';
-        userName = 'Demo User';
-      }
-    } else if (!userId) {
-      // Use mock user ID if DB is not connected
-      userId = 'demo-user-id';
-      userName = 'Demo User';
-    }
 
     if (!role || !['HR Executive', 'Business Analyst'].includes(role)) {
       return res.status(400).json({ message: 'Invalid role' });
@@ -258,7 +231,7 @@ export const startSimulation = async (req, res) => {
 export const getSimulation = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.id;
+    const userId = req.user._id;
 
     const session = await SimulationSession.findOne({
       _id: id,
@@ -289,7 +262,7 @@ export const getSimulation = async (req, res) => {
 export const generateFinalReport = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.id;
+    const userId = req.user._id;
 
     const session = await SimulationSession.findOne({
       _id: id,
@@ -323,7 +296,7 @@ export const generateFinalReport = async (req, res) => {
 export const endSimulation = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.id;
+    const userId = req.user._id;
 
     const session = await SimulationSession.findOne({
       _id: id,
