@@ -109,9 +109,50 @@ export const startSimulation = async (req, res) => {
         });
 
         if (existingSession) {
-          return res.status(400).json({ 
-            message: 'Active session already exists',
-            sessionId: existingSession._id,
+          // Return existing session details instead of error
+          console.log(`✅ Returning existing active session: ${existingSession._id}`);
+          
+          // Get the first message from the session
+          const firstMessage = await Message.findOne({
+            simulationId: existingSession._id,
+          }).sort({ createdAt: 1 });
+          
+          // Get current task based on session's currentTaskIndex
+          const currentTask = getCurrentTask(existingSession.currentTaskIndex);
+          
+          // Format response same as new session
+          return res.status(200).json({
+            sessionId: existingSession._id.toString(),
+            context: {
+              role: existingSession.role,
+              department: existingSession.role === 'HR Executive' ? 'Human Resources' : 'Business Analysis',
+              currentScenario: currentTask?.title || 'Task 1',
+              objectives: [
+                'Complete assigned tasks',
+                'Interact with team members',
+                'Demonstrate professional skills',
+              ],
+            },
+            initialMessage: firstMessage ? {
+              id: firstMessage._id.toString(),
+              type: 'ai',
+              content: firstMessage.text,
+              timestamp: firstMessage.createdAt,
+              sender: firstMessage.persona || 'Sarah (Manager)',
+            } : {
+              id: `msg-${Date.now()}`,
+              type: 'ai',
+              content: `Welcome back to the HR Team! Let's continue with your tasks.`,
+              timestamp: existingSession.startedAt || new Date(),
+              sender: 'Sarah (Manager)',
+            },
+            tasks: currentTask ? [{
+              id: currentTask.id,
+              title: currentTask.title,
+              description: currentTask.description,
+              status: 'pending',
+              priority: currentTask.level === 'advanced' ? 'high' : 'medium',
+            }] : [],
           });
         }
       } catch (dbError) {
