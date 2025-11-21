@@ -11,6 +11,8 @@ import uploadRoutes from './src/routes/upload.routes.js';
 import audioRoutes from './src/routes/audio.routes.js';
 import { initializeSocket } from './src/sockets/socket.handler.js';
 import { setSocketInstance } from './src/utils/socket.instance.js';
+import { initializeSharedResumes } from './src/services/resume.service.js';
+import mongoose from 'mongoose';
 
 dotenv.config();
 
@@ -26,6 +28,15 @@ const io = new Server(server, {
 
 // Connect to MongoDB
 connectDB();
+
+// Initialize shared resumes when MongoDB is connected
+mongoose.connection.once('connected', async () => {
+  try {
+    await initializeSharedResumes();
+  } catch (error) {
+    console.error('Error initializing shared resumes:', error);
+  }
+});
 
 // Middleware
 app.use(cors({

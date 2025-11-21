@@ -7,10 +7,11 @@ Complete API documentation for KAIRO Backend - AI HR Simulation Platform.
 1. [Getting Started](#getting-started)
 2. [Authentication](#authentication)
 3. [API Endpoints](#api-endpoints)
-4. [Postman Collection](#postman-collection)
-5. [Variables](#variables)
-6. [Use Cases](#use-cases)
-7. [Error Handling](#error-handling)
+4. [WebSocket Events](#websocket-events)
+5. [Postman Collection](#postman-collection)
+6. [Variables](#variables)
+7. [Use Cases](#use-cases)
+8. [Error Handling](#error-handling)
 
 ---
 
@@ -715,21 +716,542 @@ or
 
 ## WebSocket Events
 
-The backend also supports WebSocket connections for real-time communication. These are not included in the REST API collection but are documented here for reference.
+The backend supports WebSocket connections via Socket.io for real-time communication during simulation sessions. This enables live chat with AI personas, typing indicators, and streaming responses.
+
+### Connection
+
+**WebSocket URL:** `ws://localhost:3000` (or your server URL)
+
+**Connection with Authentication:**
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3000', {
+  auth: {
+    token: 'your-jwt-token-here'
+  }
+});
+```
+
+**Alternative Authentication (via Header):**
+```javascript
+const socket = io('http://localhost:3000', {
+  extraHeaders: {
+    Authorization: 'Bearer your-jwt-token-here'
+  }
+});
+```
+
+**Development Mode:**
+In development mode, connections without tokens are allowed with demo user credentials.
+
+### Authentication
+
+WebSocket connections require JWT authentication. The token can be provided via:
+1. `socket.handshake.auth.token` - Preferred method
+2. `Authorization` header with `Bearer <token>` format
+
+If authentication fails, the connection will be rejected with an error.
+
+---
 
 ### Client → Server Events
 
-- `join_simulation` - Join a simulation session room
-- `send_message` - Send a chat message
-- `send_audio` - Send an audio message
-- `typing` - Send typing indicator
+#### `join_simulation`
+
+Join a simulation session room. Must be called before sending messages.
+
+**Event:** `join_simulation`
+
+**Payload:**
+```javascript
+socket.emit('join_simulation', sessionId);
+```
+
+**Parameters:**
+- `sessionId` (string, required): The simulation session ID from `POST /api/simulation/start`
+
+**Behavior:**
+- Verifies user owns the session (in production)
+- Joins the socket to the session room
+- Sets `currentSessionId` for the socket
+- Required before sending messages
+
+**Example:**
+```javascript
+socket.emit('join_simulation', '507f1f77bcf86cd799439011');
+```
+
+---
+
+#### `send_message`
+
+Send a chat message to AI personas in the simulation.
+
+**Event:** `send_message`
+
+**Payload:**
+```javascript
+socket.emit('send_message', {
+  message: 'Hello, I need help with this task.',
+  persona: 'Manager' // Optional, defaults to 'Manager'
+});
+```
+
+**Parameters:**
+- `message` (string, required): The message text to send
+- `persona` (string, optional): Target persona - 'Manager', 'Candidate', 'Team', or null (defaults to 'Manager')
+
+**Response Flow:**
+1. User message is saved and emitted as `new_message`
+2. AI generates streaming response
+3. Server emits `persona_typing` (isTyping: true)
+4. Server emits `message_start` with temporary message ID
+5. Server emits `message_chunk` for each response chunk (streaming)
+6. Server emits `message_complete` when done
+7. Server emits `message_saved` with final database ID
+8. Server emits `persona_typing` (isTyping: false)
+
+**Example:**
+```javascript
+socket.emit('send_message', {
+  message: 'How should I approach writing this job description?',
+  persona: 'Manager'
+});
+```
+
+**Special Commands:**
+- `skip`, `exit`, `end` - Ends the simulation session and generates summary
+
+---
+
+#### `send_audio`
+
+Send an audio message (currently returns placeholder response).
+
+**Event:** `send_audio`
+
+**Payload:**
+```javascript
+socket.emit('send_audio', {
+  audioUrl: 'https://example.com/audio.mp3',
+  persona: 'Manager' // Optional
+});
+```
+
+**Parameters:**
+- `audioUrl` (string, required): URL to the audio file
+- `persona` (string, optional): Target persona
+
+**Note:** Currently returns a placeholder response. Full STT integration pending.
+
+---
+
+#### `typing`
+
+Send typing indicator to show user is typing.
+
+**Event:** `typing`
+
+**Payload:**
+```javascript
+socket.emit('typing', {
+  isTyping: true // or false
+});
+```
+
+**Parameters:**
+- `isTyping` (boolean, required): Whether user is currently typing
+
+**Example:**
+```javascript
+// User starts typing
+socket.emit('typing', { isTyping: true });
+
+// User stops typing
+socket.emit('typing', { isTyping: false });
+```
+
+---
 
 ### Server → Client Events
 
-- `new_message` - New message received
-- `persona_typing` - Persona typing indicator
-- `task_assigned` - New task assigned
-- `task_scored` - Task evaluation completed
+#### `new_message`
+
+Emitted when a new message is received (user or AI).
+
+**Event:** `new_message`
+
+**Payload:**
+```json
+{
+  "id": "msg-1234567890",
+  "sender": "user" | "manager" | "candidate" | "team" | "system",
+  "persona": "Manager" | null,
+  "text": "Message content here",
+  "audioUrl": "https://...", // Optional, for audio messages
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+**Listen:**
+```javascript
+socket.on('new_message', (data) => {
+  console.log('New message:', data);
+  // Display message in UI
+});
+```
+
+---
+
+#### `persona_typing`
+
+Emitted when AI persona starts or stops typing.
+
+**Event:** `persona_typing`
+
+**Payload:**
+```json
+{
+  "persona": "Manager",
+  "isTyping": true // or false
+}
+```
+
+**Listen:**
+```javascript
+socket.on('persona_typing', (data) => {
+  if (data.isTyping) {
+    // Show typing indicator for persona
+  } else {
+    // Hide typing indicator
+  }
+});
+```
+
+---
+
+#### `message_start`
+
+Emitted when AI starts generating a response (for streaming).
+
+**Event:** `message_start`
+
+**Payload:**
+```json
+{
+  "id": "temp-1234567890-abc123",
+  "sender": "manager",
+  "persona": "Manager"
+}
+```
+
+**Listen:**
+```javascript
+socket.on('message_start', (data) => {
+  // Create new message UI element with temp ID
+  // Start showing loading indicator
+});
+```
+
+---
+
+#### `message_chunk`
+
+Emitted for each chunk of streaming AI response.
+
+**Event:** `message_chunk`
+
+**Payload:**
+```json
+{
+  "id": "temp-1234567890-abc123",
+  "chunk": "This is a chunk of the response..."
+}
+```
+
+**Listen:**
+```javascript
+socket.on('message_chunk', (data) => {
+  // Append chunk to message with matching temp ID
+  // Update UI in real-time
+});
+```
+
+---
+
+#### `message_complete`
+
+Emitted when AI finishes generating response.
+
+**Event:** `message_complete`
+
+**Payload:**
+```json
+{
+  "id": "temp-1234567890-abc123"
+}
+```
+
+**Listen:**
+```javascript
+socket.on('message_complete', (data) => {
+  // Stop loading indicator for message with temp ID
+  // Message is complete, waiting for final ID
+});
+```
+
+---
+
+#### `message_saved`
+
+Emitted when message is saved to database with final ID.
+
+**Event:** `message_saved`
+
+**Payload:**
+```json
+{
+  "tempId": "temp-1234567890-abc123",
+  "id": "msg-507f1f77bcf86cd799439011",
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+**Listen:**
+```javascript
+socket.on('message_saved', (data) => {
+  // Replace temp ID with final database ID
+  // Update message in UI with permanent ID
+});
+```
+
+---
+
+#### `user_typing`
+
+Emitted when another user in the session is typing.
+
+**Event:** `user_typing`
+
+**Payload:**
+```json
+{
+  "userId": "507f1f77bcf86cd799439011",
+  "isTyping": true // or false
+}
+```
+
+**Note:** Currently single-user sessions, but included for future multi-user support.
+
+---
+
+#### `task_assigned`
+
+Emitted when a new task is assigned (from task submission).
+
+**Event:** `task_assigned`
+
+**Payload:**
+```json
+{
+  "task": {
+    "id": "hr_t2",
+    "title": "Screen 10 resumes & shortlist top 3 candidates",
+    "description": "...",
+    "level": "beginner",
+    "expectedOutput": "...",
+    "status": "pending"
+  }
+}
+```
+
+**Listen:**
+```javascript
+socket.on('task_assigned', (data) => {
+  // Update UI with new task
+  // Show notification
+});
+```
+
+---
+
+#### `task_scored`
+
+Emitted when a task submission is evaluated.
+
+**Event:** `task_scored`
+
+**Payload:**
+```json
+{
+  "taskId": "hr_t1",
+  "score": 85,
+  "feedback": "Great job on the job description...",
+  "improvements": [
+    "Consider adding more specific requirements",
+    "Include salary range information"
+  ]
+}
+```
+
+**Listen:**
+```javascript
+socket.on('task_scored', (data) => {
+  // Display score and feedback
+  // Update task status
+});
+```
+
+---
+
+#### `session_ended`
+
+Emitted when simulation session ends (via skip/exit command or API).
+
+**Event:** `session_ended`
+
+**Payload:**
+```json
+{
+  "sessionId": "507f1f77bcf86cd799439011",
+  "summary": "Session Summary:\n- Tasks attempted: 2\n..."
+}
+```
+
+**Listen:**
+```javascript
+socket.on('session_ended', (data) => {
+  // Show session summary
+  // Redirect to report page
+});
+```
+
+---
+
+#### `error`
+
+Emitted when an error occurs.
+
+**Event:** `error`
+
+**Payload:**
+```json
+{
+  "message": "Error description",
+  "details": "Additional error details" // Optional
+}
+```
+
+**Listen:**
+```javascript
+socket.on('error', (data) => {
+  console.error('Socket error:', data);
+  // Show error to user
+});
+```
+
+**Common Errors:**
+- `"Not in a simulation session"` - Must join simulation first
+- `"Simulation session not found"` - Invalid session ID
+- `"Failed to send message"` - General message error
+- `"Failed to get AI response"` - AI service error
+
+---
+
+### Complete WebSocket Example
+
+```javascript
+import { io } from 'socket.io-client';
+
+// Connect with authentication
+const socket = io('http://localhost:3000', {
+  auth: {
+    token: localStorage.getItem('token') // Your JWT token
+  }
+});
+
+// Connection established
+socket.on('connect', () => {
+  console.log('Connected to server');
+  
+  // Join simulation session
+  const sessionId = '507f1f77bcf86cd799439011';
+  socket.emit('join_simulation', sessionId);
+});
+
+// Listen for new messages
+socket.on('new_message', (data) => {
+  console.log('New message:', data);
+  // Add message to chat UI
+});
+
+// Listen for typing indicators
+socket.on('persona_typing', (data) => {
+  if (data.isTyping) {
+    console.log(`${data.persona} is typing...`);
+  }
+});
+
+// Listen for streaming chunks
+socket.on('message_chunk', (data) => {
+  // Append chunk to message in UI
+  console.log('Chunk:', data.chunk);
+});
+
+// Listen for errors
+socket.on('error', (error) => {
+  console.error('Socket error:', error);
+});
+
+// Send a message
+function sendMessage(text) {
+  socket.emit('send_message', {
+    message: text,
+    persona: 'Manager'
+  });
+}
+
+// Send typing indicator
+function setTyping(isTyping) {
+  socket.emit('typing', { isTyping });
+}
+
+// Disconnect
+socket.on('disconnect', () => {
+  console.log('Disconnected from server');
+});
+```
+
+---
+
+### WebSocket Flow Diagram
+
+```
+1. Client connects → authenticateSocket middleware
+2. Client emits 'join_simulation' → joins session room
+3. Client emits 'send_message' → 
+   a. User message saved & emitted as 'new_message'
+   b. AI generates response (streaming)
+   c. Server emits 'persona_typing' (true)
+   d. Server emits 'message_start'
+   e. Server emits 'message_chunk' (multiple times)
+   f. Server emits 'message_complete'
+   g. Server emits 'message_saved' with final ID
+   h. Server emits 'persona_typing' (false)
+4. Client receives all events and updates UI
+```
+
+---
+
+### WebSocket Best Practices
+
+1. **Always Join Session First**: Call `join_simulation` before sending messages
+2. **Handle Reconnection**: Implement reconnection logic for dropped connections
+3. **Update UI Incrementally**: Use `message_chunk` for real-time streaming display
+4. **Replace Temp IDs**: When `message_saved` is received, replace temporary ID with database ID
+5. **Error Handling**: Always listen for `error` events and handle gracefully
+6. **Cleanup**: Disconnect socket when component unmounts or user logs out
 
 ---
 

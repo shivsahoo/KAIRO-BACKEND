@@ -171,6 +171,55 @@ KAIRO API Collection
 └── Health Check
 ```
 
+## 🔌 WebSocket Support
+
+The KAIRO backend also supports **WebSocket connections** via Socket.io for real-time communication during simulations. While Postman doesn't natively support WebSocket testing, you can use the REST API to:
+
+1. **Get your token** - Use Login endpoint
+2. **Start a simulation** - Get session ID
+3. **Connect via WebSocket** - Use Socket.io client in your application
+
+### WebSocket Events
+
+**Client → Server:**
+- `join_simulation` - Join a simulation session
+- `send_message` - Send chat message to AI personas
+- `send_audio` - Send audio message
+- `typing` - Send typing indicator
+
+**Server → Client:**
+- `new_message` - New message received
+- `persona_typing` - AI persona typing indicator
+- `message_start` - AI response started (streaming)
+- `message_chunk` - Streaming response chunks
+- `message_complete` - AI response completed
+- `message_saved` - Message saved with database ID
+- `task_assigned` - New task assigned
+- `task_scored` - Task evaluation completed
+- `session_ended` - Session ended
+- `error` - Error occurred
+
+For complete WebSocket documentation, see **API_DOCUMENTATION.md** section on WebSocket Events.
+
+### Testing WebSockets
+
+To test WebSocket connections, you can use:
+- **Browser Console** - Connect using Socket.io client library
+- **Postman** - Use the WebSocket request feature (if available in your version)
+- **Custom Client** - Build a simple test client using Socket.io
+
+Example connection:
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3000', {
+  auth: { token: 'your-jwt-token' }
+});
+
+socket.emit('join_simulation', 'session-id');
+socket.emit('send_message', { message: 'Hello!' });
+```
+
 ## 🎯 Tips
 
 1. **Use Collection Runner**: Run multiple requests in sequence

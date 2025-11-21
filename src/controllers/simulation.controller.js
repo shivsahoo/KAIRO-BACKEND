@@ -1,5 +1,6 @@
 import SimulationSession from '../models/SimulationSession.model.js';
 import Message from '../models/Message.model.js';
+import TaskSubmission from '../models/TaskSubmission.model.js';
 import { getCurrentTask, getTaskByIndex } from '../services/task.service.js';
 import { generatePersonaResponse } from '../services/ai.orchestrator.js';
 import { generatePDFReport } from '../services/pdf.service.js';
@@ -79,7 +80,7 @@ export const startSimulation = async (req, res) => {
         const existingSession = await SimulationSession.findOne({
           userId,
           status: 'active',
-        });
+        }).populate('userId', 'name');
 
         if (existingSession) {
           // Return existing session details instead of error
@@ -92,6 +93,63 @@ export const startSimulation = async (req, res) => {
           
           // Get current task based on session's currentTaskIndex
           const currentTask = getCurrentTask(existingSession.currentTaskIndex);
+          
+          // Build tasks array with all previous and current tasks
+          const tasks = [];
+          
+          // Get all tasks up to and including current task index
+          const totalTasksToShow = currentTask ? existingSession.currentTaskIndex + 1 : existingSession.currentTaskIndex;
+          
+          for (let i = 0; i < totalTasksToShow; i++) {
+            const task = getTaskByIndex(i);
+            if (task) {
+              const isCurrentTask = i === existingSession.currentTaskIndex;
+              
+              if (isCurrentTask) {
+                // Current task - always pending
+                tasks.push({
+                  id: task.id,
+                  title: task.title,
+                  description: task.description,
+                  level: task.level,
+                  expectedOutput: task.expectedOutput,
+                  status: 'pending',
+                });
+              } else {
+                // Previous task - find highest score submission
+                const allSubmissions = await TaskSubmission.find({
+                  simulationId: existingSession._id,
+                  taskId: task.id,
+                });
+                
+                // Filter submissions with valid scores and sort by score descending
+                const submissionsWithScores = allSubmissions
+                  .filter(sub => sub.score !== null && sub.score !== undefined)
+                  .sort((a, b) => (b.score || 0) - (a.score || 0));
+                
+                // Get the best submission (highest score)
+                const bestSubmission = submissionsWithScores.length > 0 
+                  ? submissionsWithScores[0] 
+                  : (allSubmissions.length > 0 ? allSubmissions[allSubmissions.length - 1] : null); // Fallback to latest if no scores
+                
+                tasks.push({
+                  id: task.id,
+                  title: task.title,
+                  description: task.description,
+                  level: task.level,
+                  expectedOutput: task.expectedOutput,
+                  status: bestSubmission ? 'completed' : 'pending',
+                  score: bestSubmission?.score ?? null,
+                  feedback: bestSubmission?.feedback || null,
+                  improvements: bestSubmission?.improvements || null,
+                  submittedAt: bestSubmission?.submittedAt || null,
+                });
+              }
+            }
+          }
+          
+          // Get welcome message (first welcome message in timeline or generate one)
+          const welcomeMessage = `Welcome back, ${existingSession.userId?.name || 'there'}! Let's continue working on your HR tasks.`;
           
           // Format response same as new session
           return res.status(200).json({
@@ -106,6 +164,13 @@ export const startSimulation = async (req, res) => {
                 'Demonstrate professional skills',
               ],
             },
+            welcomeMessage: {
+              id: `welcome-${existingSession._id}`,
+              type: 'ai',
+              content: welcomeMessage,
+              timestamp: existingSession.startedAt || new Date(),
+              sender: 'Sarah (Manager)',
+            },
             initialMessage: firstMessage ? {
               id: firstMessage._id.toString(),
               type: 'ai',
@@ -119,13 +184,7 @@ export const startSimulation = async (req, res) => {
               timestamp: existingSession.startedAt || new Date(),
               sender: 'Sarah (Manager)',
             },
-            tasks: currentTask ? [{
-              id: currentTask.id,
-              title: currentTask.title,
-              description: currentTask.description,
-              status: 'pending',
-              priority: currentTask.level === 'advanced' ? 'high' : 'medium',
-            }] : [],
+            tasks: tasks,
           });
         }
       } catch (dbError) {
@@ -236,6 +295,16 @@ export const startSimulation = async (req, res) => {
       }
     }
 
+    // Build tasks array (for new session, only current task)
+    const tasks = firstTask ? [{
+      id: firstTask.id,
+      title: firstTask.title,
+      description: firstTask.description,
+      level: firstTask.level,
+      expectedOutput: firstTask.expectedOutput,
+      status: 'pending',
+    }] : [];
+
     res.status(201).json({
       sessionId: sessionId,
       context: {
@@ -262,13 +331,7 @@ export const startSimulation = async (req, res) => {
         timestamp: messageTimestamp,
         sender: 'Sarah (Manager)',
       },
-      tasks: firstTask ? [{
-        id: firstTask.id,
-        title: firstTask.title,
-        description: firstTask.description,
-        status: 'pending',
-        priority: firstTask.level === 'advanced' ? 'high' : 'medium',
-      }] : [],
+      tasks: tasks,
     });
   } catch (error) {
     console.error('Start simulation error:', error);

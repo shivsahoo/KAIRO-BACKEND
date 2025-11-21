@@ -24,6 +24,22 @@ const taskSubmissionSchema = new mongoose.Schema({
   audioUrl: {
     type: String,
   },
+  selectedResumes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Resume',
+  }],
+  resumeRatings: [{
+    resumeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Resume',
+    },
+    rating: {
+      type: Number,
+      min: 1,
+      max: 10,
+    },
+    notes: String,
+  }],
   submittedAt: {
     type: Date,
     default: Date.now,
