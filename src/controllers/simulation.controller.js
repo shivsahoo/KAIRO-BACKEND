@@ -181,6 +181,9 @@ export const startSimulation = async (req, res) => {
       await session.save();
     }
 
+    // Generate welcome message for first-time simulation start (hardcoded)
+    const welcomeMessage = `Welcome to the team, ${userName}! I'm Sarah Chen, your HR Manager. I'm excited to have you on board as an ${role} and look forward to working with you.`;
+
     // Generate initial persona message (Manager) using AI
     let initialMessage;
     try {
@@ -244,6 +247,13 @@ export const startSimulation = async (req, res) => {
           'Interact with team members',
           'Demonstrate professional skills',
         ],
+      },
+      welcomeMessage: {
+        id: `welcome-${Date.now()}`,
+        type: 'ai',
+        content: welcomeMessage,
+        timestamp: new Date(),
+        sender: 'Sarah (Manager)',
       },
       initialMessage: {
         id: messageId,
