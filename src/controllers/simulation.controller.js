@@ -31,14 +31,13 @@ Create a realistic scenario where:
 
 Make it feel urgent and realistic, like a real workplace situation.`,
     
-    'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. We have shortlisted 4-5 candidates for the Python Developer position and need to schedule 3 interviews with them and stakeholders.
+    'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. We have shortlisted a candidate for the Python Developer position and need to schedule 1 interview with them.
 
 Create a realistic scenario where:
-1. You explain that interviews need to be scheduled for the shortlisted candidates
-2. Mention that some candidates or stakeholders may have conflicts, so they need to handle those professionally
-3. Explain the importance of sending proper calendar invites and emails
-4. Ask them how they would approach scheduling the interviews and handling any conflicts
-5. Mention that interviews should be scheduled within the next 2 weeks
+1. You explain that an interview needs to be scheduled for the shortlisted candidate
+2. Explain the importance of sending proper calendar invite and email with meeting link and resume
+3. Ask them how they would approach scheduling the interview
+4. Mention that the interview should be scheduled within the next 2 weeks
 
 Make it feel like a real workplace task that requires attention to detail and professional communication.`,
     

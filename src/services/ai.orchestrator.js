@@ -535,36 +535,35 @@ If the submission contains a JD for a different position, clearly state this in 
   // Add specific evaluation for hr_t3 (Interview Scheduling)
   if (taskDetails.id === 'hr_t3') {
     prompt += `\n\n=== CRITICAL EVALUATION FOR HR_T3 (INTERVIEW SCHEDULING) ===
-The task requires scheduling 3 interviews with candidates and stakeholders.
+The task requires scheduling 1 interview with a candidate and sending an email with meeting link and resume.
 
 IMPORTANT EVALUATION CRITERIA (Weighted Scoring):
 
 1. CORRECT INVITATIONS (40% weight - 4 points out of 10):
-   - Did the user schedule exactly 3 interviews? (Expected: 3)
-   - Were the correct candidates selected for interviews?
-   - Are the calendar invites complete with all necessary details?
-   - Did they send emails to the correct candidates?
+   - Did the user schedule exactly 1 interview? (Expected: 1)
+   - Was the correct candidate selected for the interview?
+   - Is the calendar invite complete with all necessary details?
+   - Did they send an email to the candidate?
    - Are interview details (date, time, type, location/meeting link) accurate?
-   - Check if emails contain proper subject lines, greetings, and interview details
+   - Check if email contains proper subject line, greeting, and interview details
 
 2. EMAIL QUALITY (30% weight - 3 points out of 10):
-   - Were resumes attached to emails (especially for interviewer)?
-   - Were meeting links included in emails?
-   - Are emails sent to both candidates and interviewers?
-   - Is email content professional and clear?
-   - Check if all necessary details are included
+   - Was the resume attached to the email?
+   - Was the meeting link included in the email?
+   - Is the email content professional and clear?
+   - Check if all necessary details are included (meeting link, resume attachment)
 
 3. CLARITY (30% weight - 3 points out of 10):
-   - Are the emails clear, professional, and well-written?
+   - Is the email clear, professional, and well-written?
    - Is the communication concise but complete?
-   - Are calendar invites properly formatted with all required information?
+   - Is the calendar invite properly formatted with all required information?
    - Is the tone appropriate for professional communication?
    - Check grammar, spelling, and formatting
 
 EVALUATION DATA PROVIDED:
 ${interviewDetails && interviewDetails.length > 0 ? `
 === INTERVIEW SCHEDULES ===
-Total interviews scheduled: ${interviewDetails.length} (Expected: 3)
+Total interviews scheduled: ${interviewDetails.length} (Expected: 1)
 ${interviewDetails.map((interview, index) => `
 Interview ${index + 1}:
 - Candidate: ${interview.candidateName} (${interview.candidateEmail})
@@ -581,7 +580,7 @@ Interview ${index + 1}:
 
 ${emailDetails && emailDetails.length > 0 ? `
 === EMAILS SENT/RECEIVED ===
-Total emails: ${emailDetails.length} (Expected: 6 emails minimum - 3 to candidates + 3 to interviewers)
+Total emails: ${emailDetails.length} (Expected: 1 email minimum)
 ${emailDetails.map((email, index) => `
 Email ${index + 1}:
 - Type: ${email.type} (${email.type === 'sent' ? 'Sent' : 'Received'})
@@ -596,27 +595,27 @@ Email ${index + 1}:
 `).join('\n')}
 
 IMPORTANT EVALUATION CRITERIA:
-1. Check if resumes are attached to emails (especially interviewer emails)
-2. Check if meeting links are included in email body
-3. Check if emails were sent to both candidates AND interviewers (should be 6 emails minimum - 3 pairs)
-4. Check if correct candidates received emails
-` : 'No emails found. CRITICAL ERROR - Emails should be sent to candidates and interviewers.'}
+1. Check if resume is attached to the email (CRITICAL for evaluation)
+2. Check if meeting link is included in email body (CRITICAL for evaluation)
+3. Check if email was sent to the correct candidate
+4. Check if interview was scheduled correctly
+` : 'No emails found. CRITICAL ERROR - Email should be sent to the candidate.'}
 
 SCORING BREAKDOWN:
-- If less than 3 interviews scheduled: Deduct 2-3 points (Correct Invitations - 40%)
-- If wrong candidates selected: Deduct 2-3 points (Correct Invitations - 40%)
-- If emails sent to wrong candidates: Deduct 2-3 points (Correct Invitations - 40%)
-- If resumes NOT attached to emails (especially interviewer): Deduct 1-2 points (Email Quality - 30%)
-- If meeting links NOT included in emails: Deduct 1-2 points (Email Quality - 30%)
-- If emails NOT sent to both candidate and interviewer: Deduct 1-2 points (Email Quality - 30%)
-- If emails lack clarity/professionalism: Deduct 1-2 points (Clarity - 30%)
-- If calendar invites incomplete: Deduct 1-2 points (Clarity - 30%)
+- If no interview scheduled or more than 1 interview: Deduct 2-3 points (Correct Invitations - 40%)
+- If wrong candidate selected: Deduct 2-3 points (Correct Invitations - 40%)
+- If email sent to wrong candidate: Deduct 2-3 points (Correct Invitations - 40%)
+- If resume NOT attached to email: Deduct 1-2 points (Email Quality - 30%)
+- If meeting link NOT included in email: Deduct 1-2 points (Email Quality - 30%)
+- If email not sent: Deduct 2-3 points (Email Quality - 30%)
+- If email lacks clarity/professionalism: Deduct 1-2 points (Clarity - 30%)
+- If calendar invite incomplete: Deduct 1-2 points (Clarity - 30%)
 
 SCORING EXAMPLES:
-- 8-10: All 3 interviews scheduled correctly, emails sent to both candidate and interviewer with resumes and links, clear communication
-- 6-7: 3 interviews scheduled but minor issues with emails (missing resume attachment or link)
-- 4-5: Less than 3 interviews or major issues with emails (no attachments, no links, missing recipients)
-- 0-3: No interviews scheduled, wrong candidates, or critical errors in emails
+- 8-10: Interview scheduled correctly, email sent to candidate with resume attachment and meeting link, clear professional communication
+- 6-7: Interview scheduled but minor issues with email (missing resume attachment or meeting link)
+- 4-5: No interview scheduled or major issues with email (no attachments, no links)
+- 0-3: No interview scheduled, no email sent, or critical errors in email
 `;
   }
 
@@ -626,7 +625,7 @@ Please evaluate this submission based on:
 2. Quality and completeness of the submission
 3. Professionalism and attention to detail
 4. If files are included, evaluate their content and relevance
-5. ${taskDetails.id === 'hr_t2' ? 'For resume screening: Evaluate selection quality, justification, and HR judgment' : taskDetails.id === 'hr_t1' ? 'For job description: Verify the JD is for HR Intern position, not another role' : taskDetails.id === 'hr_t3' ? 'For interview scheduling: Evaluate correct invitations (40% - check if 3 interviews scheduled), email quality (30% - check if resumes attached and links included), and clarity (30% - check professional communication)' : 'Overall demonstration of HR skills and knowledge'}
+5. ${taskDetails.id === 'hr_t2' ? 'For resume screening: Evaluate selection quality, justification, and HR judgment' : taskDetails.id === 'hr_t1' ? 'For job description: Verify the JD is for HR Intern position, not another role' : taskDetails.id === 'hr_t3' ? 'For interview scheduling: Evaluate correct invitations (40% - check if 1 interview scheduled), email quality (30% - check if resume attached and meeting link included), and clarity (30% - check professional communication)' : 'Overall demonstration of HR skills and knowledge'}
 
 Provide a JSON response with:
 {

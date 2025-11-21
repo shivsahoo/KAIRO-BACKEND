@@ -18,8 +18,8 @@ export const HR_TASKS = [
     id: 'hr_t3',
     level: 'intermediate',
     title: 'Schedule Interviews (Calendar + Mail)',
-    description: 'Schedule 3 interviews with candidates and stakeholders. Pick time slots, create calendar invites, and send emails to candidates.',
-    expectedOutput: 'Calendar events + sent emails',
+    description: 'Schedule 1 interview with a candidate. Pick a time slot, create calendar invite, and send email with meeting link and resume.',
+    expectedOutput: '1 scheduled calendar event + 1 sent email',
   },
   {
     id: 'hr_t4',
