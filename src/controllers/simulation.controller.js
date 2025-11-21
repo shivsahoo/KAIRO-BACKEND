@@ -8,7 +8,7 @@ import { generatePDFReport } from '../services/pdf.service.js';
 /**
  * Generate realistic HR scenario prompt based on task
  */
-function generateHRScenarioPrompt(task, role, userName) {
+export function generateHRScenarioPrompt(task, role, userName) {
   const scenarios = {
     'hr_t1': `You are Sarah Chen, HR Manager. ${userName} has just joined as an HR Executive. You need to assign them their first task: "${task.title}". 
 
@@ -87,13 +87,38 @@ export const startSimulation = async (req, res) => {
           // Return existing session details instead of error
           console.log(`✅ Returning existing active session: ${existingSession._id}`);
           
-          // Get the first message from the session
-          const firstMessage = await Message.findOne({
+          // Get ALL messages from the session (sorted by creation time)
+          const allMessages = await Message.find({
             simulationId: existingSession._id,
           }).sort({ createdAt: 1 });
           
           // Get current task based on session's currentTaskIndex
           const currentTask = getCurrentTask(existingSession.currentTaskIndex);
+          
+          // Format all messages for frontend
+          const formattedMessages = allMessages.map((msg) => {
+            // Determine sender name based on message type
+            let senderName = 'You';
+            if (msg.sender === 'user') {
+              senderName = 'You';
+            } else if (msg.sender === 'manager' || msg.persona === 'Manager') {
+              senderName = 'Sarah (Manager)';
+            } else if (msg.persona) {
+              senderName = msg.persona;
+            } else {
+              senderName = 'AI';
+            }
+            
+            return {
+              id: msg._id.toString(),
+              type: msg.sender === 'user' ? 'user' : 'ai',
+              content: msg.text,
+              timestamp: msg.createdAt,
+              sender: senderName,
+            };
+          });
+          
+          console.log(`📋 Loaded ${formattedMessages.length} messages for session ${existingSession._id}`);
           
           // Build tasks array with all previous and current tasks
           const tasks = [];
@@ -149,12 +174,11 @@ export const startSimulation = async (req, res) => {
             }
           }
           
-          // Get welcome message (first welcome message in timeline or generate one)
-          const welcomeMessage = `Welcome back, ${existingSession.userId?.name || 'there'}! Let's continue working on your HR tasks.`;
-          
-          // Format response same as new session
+          // Get first message for initialMessage
+          const firstMessage = allMessages.find(msg => msg.sender === 'manager' || msg.persona === 'Manager');
           return res.status(200).json({
             sessionId: existingSession._id.toString(),
+            isResuming: true,
             context: {
               role: existingSession.role,
               department: existingSession.role === 'HR Executive' ? 'Human Resources' : 'Business Analysis',
@@ -165,13 +189,7 @@ export const startSimulation = async (req, res) => {
                 'Demonstrate professional skills',
               ],
             },
-            welcomeMessage: {
-              id: `welcome-${existingSession._id}`,
-              type: 'ai',
-              content: welcomeMessage,
-              timestamp: existingSession.startedAt || new Date(),
-              sender: 'Sarah (Manager)',
-            },
+            messages: formattedMessages,
             initialMessage: firstMessage ? {
               id: firstMessage._id.toString(),
               type: 'ai',
@@ -194,6 +212,32 @@ export const startSimulation = async (req, res) => {
       }
     }
     
+    // Check if this is a first-time user (no previous sessions) BEFORE creating new session
+    let isFirstTime = true;
+    if (isDbConnected) {
+      try {
+        // Ensure userId is properly formatted (convert to ObjectId if it's a string)
+        const mongoose = (await import('mongoose')).default;
+        const userIdForQuery = mongoose.Types.ObjectId.isValid(userId) 
+          ? (typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId)
+          : userId;
+        
+        const previousSessions = await SimulationSession.countDocuments({
+          userId: userIdForQuery,
+          status: { $in: ['active', 'ended'] },
+        });
+        isFirstTime = previousSessions === 0;
+        console.log(`👤 User ${userName} (${userId}) is ${isFirstTime ? 'first-time' : 'returning'} user (${previousSessions} previous sessions)`);
+      } catch (dbError) {
+        console.error('Database error checking previous sessions:', dbError.message);
+        // Assume first-time if we can't check
+        isFirstTime = true;
+        console.log(`⚠️  Assuming first-time user due to error`);
+      }
+    } else {
+      console.log(`👤 User ${userName} - MongoDB not connected, assuming first-time user`);
+    }
+
     let session;
     let sessionId;
     
@@ -241,58 +285,100 @@ export const startSimulation = async (req, res) => {
       await session.save();
     }
 
-    // Generate welcome message for first-time simulation start (hardcoded)
-    const welcomeMessage = `Welcome to the team, ${userName}! I'm Sarah Chen, your HR Manager. I'm excited to have you on board as an ${role} and look forward to working with you.`;
+    // Generate welcome message for first-time users only
+    const welcomeMessage = isFirstTime 
+      ? `Welcome to the team, ${userName}! I'm Sarah Chen, your HR Manager. I'm excited to have you on board as an ${role} and look forward to working with you.`
+      : null;
 
-    // Generate initial persona message (Manager) using AI
-    let initialMessage;
-    try {
-      if (firstTask) {
-        const { generatePersonaResponse } = await import('../services/ai.orchestrator.js');
-        
-        // Create a realistic HR scenario prompt based on the task
-        const scenarioPrompt = generateHRScenarioPrompt(firstTask, role, userName);
-        
-        const aiResponse = await generatePersonaResponse(
-          scenarioPrompt,
-          'Manager',
-          {
-            conversationHistory: [],
-            currentTask: firstTask,
-            simulationRole: role,
-          }
-        );
-        initialMessage = aiResponse.reply || `Welcome to the HR Team, ${userName}! I'm Sarah, your manager. Here's your first task: ${firstTask.title}. ${firstTask.description}. Let's get started!`;
-      } else {
-        initialMessage = `Welcome to the HR Team, ${userName}! I'm Sarah, your manager. Let's get started!`;
-      }
-    } catch (error) {
-      console.error('Error generating initial message with AI:', error);
-      console.log('Falling back to default message. Make sure OPENAI_API_KEY is set in .env');
-      // Fallback to default message if AI fails
-      initialMessage = `Welcome to the HR Team, ${userName}! I'm Sarah, your manager. Here's your first task: ${firstTask?.title || 'Task 1'}. ${firstTask?.description || 'Complete the assigned task'}. Let's get started!`;
-    }
-
-    // Save initial message only if DB is connected
-    let messageId = `msg-${Date.now()}`;
-    let messageTimestamp = new Date();
-    
-    if (isDbConnected) {
+    // Save welcome message to database for first-time users
+    let welcomeMessageId = null;
+    let welcomeMessageTimestamp = null;
+    if (welcomeMessage && isDbConnected) {
       try {
-        const msg = await Message.create({
+        const welcomeMsg = await Message.create({
           simulationId: sessionId,
           sender: 'manager',
           persona: 'Manager',
-          text: initialMessage,
+          text: welcomeMessage,
         });
-        messageId = msg._id.toString();
-        messageTimestamp = msg.createdAt;
-        
-        // Update user's roleSelected
+        welcomeMessageId = welcomeMsg._id.toString();
+        welcomeMessageTimestamp = welcomeMsg.createdAt;
+        console.log(`✅ Saved welcome message to database: ${welcomeMessageId}`);
+      } catch (dbError) {
+        console.error('Database error saving welcome message:', dbError.message);
+        // Continue without saving, will use generated ID
+        welcomeMessageId = `welcome-${Date.now()}`;
+        welcomeMessageTimestamp = new Date();
+      }
+    } else if (welcomeMessage) {
+      // If DB not connected, use generated ID
+      welcomeMessageId = `welcome-${Date.now()}`;
+      welcomeMessageTimestamp = new Date();
+    }
+
+    // For first-time users: Don't generate initial message (task brief) here
+    // It will be generated after user's first response via socket handler
+    // For returning users: Generate initial message with task brief
+    let initialMessage = null;
+    let messageId = null;
+    let messageTimestamp = null;
+
+    if (!isFirstTime) {
+      // Generate initial persona message (Manager) using AI for returning users
+      try {
+        if (firstTask) {
+          const { generatePersonaResponse } = await import('../services/ai.orchestrator.js');
+          
+          // Create a realistic HR scenario prompt based on the task
+          const scenarioPrompt = generateHRScenarioPrompt(firstTask, role, userName);
+          
+          const aiResponse = await generatePersonaResponse(
+            scenarioPrompt,
+            'Manager',
+            {
+              conversationHistory: [],
+              currentTask: firstTask,
+              simulationRole: role,
+            }
+          );
+          initialMessage = aiResponse.reply || `Welcome back! Here's your task: ${firstTask.title}. ${firstTask.description}. Let's get started!`;
+        } else {
+          initialMessage = `Welcome back! Let's continue with your tasks.`;
+        }
+      } catch (error) {
+        console.error('Error generating initial message with AI:', error);
+        console.log('Falling back to default message. Make sure OPENAI_API_KEY is set in .env');
+        // Fallback to default message if AI fails
+        initialMessage = `Welcome back! Here's your task: ${firstTask?.title || 'Task 1'}. ${firstTask?.description || 'Complete the assigned task'}. Let's get started!`;
+      }
+
+      // Save initial message only if DB is connected
+      messageId = `msg-${Date.now()}`;
+      messageTimestamp = new Date();
+      
+      if (isDbConnected) {
+        try {
+          const msg = await Message.create({
+            simulationId: sessionId,
+            sender: 'manager',
+            persona: 'Manager',
+            text: initialMessage,
+          });
+          messageId = msg._id.toString();
+          messageTimestamp = msg.createdAt;
+        } catch (dbError) {
+          console.error('Database error saving message:', dbError.message);
+        }
+      }
+    }
+    
+    // Update user's roleSelected
+    if (isDbConnected) {
+      try {
         const User = (await import('../models/User.model.js')).default;
         await User.findByIdAndUpdate(userId, { roleSelected: role });
       } catch (dbError) {
-        console.error('Database error saving message:', dbError.message);
+        console.error('Database error updating user:', dbError.message);
       }
     }
 
@@ -306,7 +392,8 @@ export const startSimulation = async (req, res) => {
       status: 'pending',
     }] : [];
 
-    res.status(201).json({
+    // Build response object
+    const response = {
       sessionId: sessionId,
       context: {
         role,
@@ -318,22 +405,32 @@ export const startSimulation = async (req, res) => {
           'Demonstrate professional skills',
         ],
       },
-      welcomeMessage: {
-        id: `welcome-${Date.now()}`,
+      tasks: tasks,
+    };
+
+    // Add welcome message only for first-time users
+    if (welcomeMessage) {
+      response.welcomeMessage = {
+        id: welcomeMessageId || `welcome-${Date.now()}`,
         type: 'ai',
         content: welcomeMessage,
-        timestamp: new Date(),
+        timestamp: welcomeMessageTimestamp || new Date(),
         sender: 'Sarah (Manager)',
-      },
-      initialMessage: {
+      };
+    }
+
+    // Add initial message only for returning users
+    if (initialMessage) {
+      response.initialMessage = {
         id: messageId,
         type: 'ai',
         content: initialMessage,
         timestamp: messageTimestamp,
         sender: 'Sarah (Manager)',
-      },
-      tasks: tasks,
-    });
+      };
+    }
+
+    res.status(201).json(response);
   } catch (error) {
     console.error('Start simulation error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });

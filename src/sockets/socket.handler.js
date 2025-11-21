@@ -184,6 +184,27 @@ export function initializeSocket(io) {
           }
         }
 
+        // Get conversation history BEFORE saving user message to check if this is first message
+        // For demo users, handle DB errors gracefully
+        let historyBeforeUserMessage = [];
+        try {
+          historyBeforeUserMessage = await Message.find({ simulationId })
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .reverse();
+        } catch (error) {
+          console.log('⚠️  Could not fetch message history, using empty array for demo');
+          historyBeforeUserMessage = [];
+        }
+
+        // Check if this is first-time user's first message (need to generate task brief)
+        // If there are no messages in history at all, this is a first-time user's first message
+        // The welcome message is not saved to DB, so we check if history is empty
+        const aiMessagesBefore = historyBeforeUserMessage.filter(msg => msg.sender === 'manager' || msg.persona === 'Manager');
+        const userMessagesBefore = historyBeforeUserMessage.filter(msg => msg.sender === 'user');
+        const isFirstUserMessage = userMessagesBefore.length === 0; // This will be the first user message
+        const needsTaskBrief = isFirstUserMessage && historyBeforeUserMessage.length === 0; // No messages at all (welcome not saved to DB, no task brief yet)
+
         // Save user message (skip DB save for demo users if DB not available)
         let userMessage;
         try {
@@ -215,7 +236,7 @@ export function initializeSocket(io) {
           timestamp: userMessage.createdAt,
         });
 
-        // Get conversation history
+        // Get conversation history (including the user message we just saved)
         // For demo users, handle DB errors gracefully
         let history = [];
         try {
@@ -231,6 +252,107 @@ export function initializeSocket(io) {
         // Get current task for context (session already retrieved above)
         const { getCurrentTask } = await import('../services/task.service.js');
         const currentTask = getCurrentTask(session?.currentTaskIndex || 0);
+
+        // If this is first-time user's first message, generate task brief first
+        if (needsTaskBrief && currentTask) {
+          console.log('👋 First-time user detected - generating task brief...');
+          
+          const { generatePersonaResponse } = await import('../services/ai.orchestrator.js');
+          const { generateHRScenarioPrompt } = await import('../controllers/simulation.controller.js');
+          
+          // Get user name for prompt
+          let userName = 'there';
+          try {
+            const User = (await import('../models/User.model.js')).default;
+            const user = await User.findById(session.userId);
+            if (user && user.name) {
+              userName = user.name;
+            }
+          } catch (error) {
+            console.log('⚠️  Could not fetch user name, using default');
+          }
+          
+          // Create a realistic HR scenario prompt based on the task
+          const scenarioPrompt = generateHRScenarioPrompt(currentTask, session?.role || 'HR Executive', userName);
+          
+          // Generate task brief
+          let taskBrief;
+          try {
+            const aiResponse = await generatePersonaResponse(
+              scenarioPrompt,
+              'Manager',
+              {
+                conversationHistory: [],
+                currentTask: currentTask,
+                simulationRole: session?.role,
+              }
+            );
+            taskBrief = aiResponse.reply || `Great! Let me brief you on your first task: ${currentTask.title}. ${currentTask.description}. Let's get started!`;
+          } catch (error) {
+            console.error('Error generating task brief:', error);
+            taskBrief = `Great! Let me brief you on your first task: ${currentTask.title}. ${currentTask.description}. Let's get started!`;
+          }
+
+          // Save task brief message
+          let taskBriefMessage;
+          try {
+            taskBriefMessage = await Message.create({
+              simulationId: sessionId,
+              sender: 'manager',
+              persona: 'Manager',
+              text: taskBrief,
+            });
+          } catch (error) {
+            console.log('⚠️  Could not save task brief to DB, using mock message');
+            taskBriefMessage = {
+              _id: `msg-${Date.now()}`,
+              simulationId: sessionId,
+              sender: 'manager',
+              persona: 'Manager',
+              text: taskBrief,
+              createdAt: new Date(),
+            };
+          }
+
+          // Emit task brief first
+          const taskBriefId = `temp-taskbrief-${Date.now()}`;
+          io.to(sessionId).emit('message_start', {
+            id: taskBriefId,
+            sender: 'manager',
+            persona: 'Manager',
+          });
+
+          // Stream task brief word by word for better UX
+          const words = taskBrief.split(' ');
+          for (let i = 0; i < words.length; i++) {
+            const chunk = (i === 0 ? '' : ' ') + words[i];
+            io.to(sessionId).emit('message_chunk', {
+              id: taskBriefId,
+              chunk: chunk,
+            });
+            // Small delay for readability
+            await new Promise(resolve => setTimeout(resolve, 30));
+          }
+
+          io.to(sessionId).emit('message_complete', {
+            id: taskBriefId,
+          });
+
+          // Save task brief message ID
+          try {
+            io.to(sessionId).emit('message_saved', {
+              id: taskBriefMessage._id.toString(),
+              timestamp: taskBriefMessage.createdAt,
+            });
+          } catch (error) {
+            console.log('⚠️  Could not emit message_saved for task brief');
+          }
+
+          // Update history to include task brief for AI response context
+          history.push(taskBriefMessage);
+          // Re-sort history by creation time
+          history.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        }
 
         // Determine persona (default to Manager if not specified)
         const currentPersona = persona || 'Manager';
