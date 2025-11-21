@@ -1,4 +1,5 @@
 import { aiClient, provider } from '../config/ai.config.js';
+import { extractMultipleFileContents } from '../utils/file.upload.js';
 
 /**
  * Generate persona response based on message and context (non-streaming)
@@ -306,19 +307,42 @@ function shouldGenerateQuestion(conversationHistory, lastReply) {
 /**
  * Evaluate task submission using AI
  */
-export async function evaluateTask(taskId, submission, taskDetails) {
+export async function evaluateTask(taskId, submission, taskDetails, resumeDetails = null, jobDescription = null) {
   if (!aiClient) {
     return generateMockEvaluation(taskId, submission);
   }
 
-  const evaluationPrompt = createEvaluationPrompt(taskDetails, submission);
+  // Extract content from files if any
+  let fileContents = '';
+  if (submission.files && submission.files.length > 0) {
+    console.log(`📄 Extracting content from ${submission.files.length} file(s)...`);
+    try {
+      const extractedFiles = await extractMultipleFileContents(submission.files);
+      
+      const fileContentParts = extractedFiles.map((file, index) => {
+        const status = file.success ? '✅' : '⚠️';
+        return `\n--- File ${index + 1}: ${file.fileName} (${file.fileType}) ${status} ---\n${file.content}\n`;
+      });
+      
+      fileContents = '\n\n=== FILE CONTENTS ===' + fileContentParts.join('\n') + '\n=== END FILE CONTENTS ===\n';
+      console.log(`✅ Extracted content from ${extractedFiles.filter(f => f.success).length}/${extractedFiles.length} file(s)`);
+    } catch (error) {
+      console.error('Error extracting file contents:', error);
+      fileContents = `\n\nNote: Files were attached but content extraction failed: ${submission.files.join(', ')}`;
+    }
+  }
+
+  const evaluationPrompt = createEvaluationPrompt(taskDetails, submission, fileContents, resumeDetails, jobDescription);
 
   try {
     if (provider === 'openai') {
       const response = await aiClient.chat.completions.create({
         model: 'gpt-4-turbo-preview',
         messages: [
-          { role: 'system', content: 'You are an expert HR evaluator. Evaluate the submission and provide a score (1-10), feedback, and improvements.' },
+          { 
+            role: 'system', 
+            content: 'You are a strict HR evaluator. Evaluate submissions critically. If the submission does not match the task requirements (e.g., wrong position, wrong content), give a LOW score (0-3). Only give high scores (8-10) for submissions that fully meet requirements. Provide a score (0-10), detailed feedback, and specific improvements. Respond in JSON format.' 
+          },
           { role: 'user', content: evaluationPrompt },
         ],
         temperature: 0.3,
@@ -326,25 +350,41 @@ export async function evaluateTask(taskId, submission, taskDetails) {
       });
 
       const result = JSON.parse(response.choices[0].message.content);
+      // Ensure score is a valid number between 0-10
+      let score = result.score;
+      if (typeof score !== 'number' || isNaN(score)) {
+        score = 0; // Default to 0 if invalid, not 7
+      }
+      // Clamp score to 0-10 range
+      score = Math.max(0, Math.min(10, Math.round(score)));
+      
       return {
-        score: result.score || 7,
-        feedback: result.feedback || 'Good submission',
+        score: score,
+        feedback: result.feedback || 'Submission evaluated',
         improvements: result.improvements || [],
       };
     } else if (provider === 'anthropic') {
       const response = await aiClient.messages.create({
         model: 'claude-3-opus-20240229',
-        max_tokens: 1000,
-        system: 'You are an expert HR evaluator. Evaluate the submission and provide a score (1-10), feedback, and improvements. Respond in JSON format.',
+        max_tokens: 2000, // Increased for longer responses with file content
+        system: 'You are a strict HR evaluator. Evaluate submissions critically. If the submission does not match the task requirements (e.g., wrong position, wrong content), give a LOW score (0-3). Only give high scores (8-10) for submissions that fully meet requirements. Provide a score (0-10), detailed feedback, and specific improvements. Respond in JSON format.',
         messages: [
           { role: 'user', content: evaluationPrompt },
         ],
       });
 
       const result = JSON.parse(response.content[0].text);
+      // Ensure score is a valid number between 0-10
+      let score = result.score;
+      if (typeof score !== 'number' || isNaN(score)) {
+        score = 0; // Default to 0 if invalid, not 7
+      }
+      // Clamp score to 0-10 range
+      score = Math.max(0, Math.min(10, Math.round(score)));
+      
       return {
-        score: result.score || 7,
-        feedback: result.feedback || 'Good submission',
+        score: score,
+        feedback: result.feedback || 'Submission evaluated',
         improvements: result.improvements || [],
       };
     }
@@ -419,23 +459,95 @@ Remember: You're Sarah, a real HR Manager talking to a colleague. Be natural, re
 /**
  * Create evaluation prompt
  */
-function createEvaluationPrompt(taskDetails, submission) {
-  return `Evaluate the following task submission:
+function createEvaluationPrompt(taskDetails, submission, fileContents = '', resumeDetails = null, jobDescription = null) {
+  let prompt = `Evaluate the following task submission:
 
 Task: ${taskDetails.title}
 Description: ${taskDetails.description}
 Expected Output: ${taskDetails.expectedOutput}
 
-Submission:
-${submission.text || 'No text provided'}
-${submission.files?.length ? `Files: ${submission.files.join(', ')}` : ''}
+=== TEXT SUBMISSION ===
+${submission.text || 'No text provided'}`;
+
+  // Add job description for hr_t2
+  if (taskDetails.id === 'hr_t2' && jobDescription) {
+    prompt += `\n\n=== JOB DESCRIPTION ===
+This is the Python Developer job description. Use this to evaluate if the selected candidates match the job requirements:
+
+${jobDescription}
+
+=== RESUME SELECTION ===
+The user selected ${resumeDetails ? resumeDetails.length : 0} candidate(s) from 10 resumes:`;
+
+    if (resumeDetails && resumeDetails.length > 0) {
+      prompt += `\n\n${resumeDetails.map((resume, index) => `
+Candidate ${index + 1}: ${resume.candidateName}
+- Quality: ${resume.quality}
+- Relevance Score: ${resume.relevance}/10
+- Experience: ${resume.experience} years
+- Education: ${resume.education}
+- Key Skills: ${resume.skills.join(', ')}
+`).join('\n')}
+
+Note: The user should have selected the top 3 candidates that best match the job description. Evaluate:
+1. Did they select exactly 3 candidates? (Expected: 3)
+2. Did they select candidates that match the job requirements from the job description?
+3. Did they select high-quality candidates? (Check quality and relevance scores)
+4. Is their justification sound and professional?
+5. Did they identify the best candidates from the pool based on the job description?`;
+    } else {
+      prompt += `\n\nNo candidates were selected.`;
+    }
+
+    if (submission.resumeRatings && submission.resumeRatings.length > 0) {
+      prompt += `\n\nUser's Ratings:
+${submission.resumeRatings.map(rating => `- Resume ID ${rating.resumeId}: ${rating.rating}/10${rating.notes ? ` - Notes: ${rating.notes}` : ''}`).join('\n')}`;
+    }
+  }
+
+  if (fileContents) {
+    prompt += fileContents;
+  } else if (submission.files?.length) {
+    prompt += `\n\nNote: ${submission.files.length} file(s) were mentioned but could not be processed: ${submission.files.join(', ')}`;
+  }
+
+  // Add specific evaluation instructions for hr_t1
+  if (taskDetails.id === 'hr_t1') {
+    prompt += `\n\n=== CRITICAL EVALUATION FOR HR_T1 ===
+IMPORTANT: The task requires a Job Description for an "HR Intern" position.
+
+You MUST check:
+1. Is the job description actually for an HR Intern position? (NOT for other roles like Developer, Manager, etc.)
+2. If the JD is for a different position (e.g., Java Developer, Software Engineer, etc.), this is a MAJOR ERROR and should result in a LOW SCORE (0-3).
+3. If the JD is for HR Intern but has issues, score accordingly (4-7).
+4. If the JD is for HR Intern and is well-written, score 8-10.
+
+SCORING GUIDELINES:
+- Wrong position (e.g., Java Developer, Software Engineer, etc.): Score 0-3 (severe penalty)
+- HR Intern JD with major issues: Score 4-5
+- HR Intern JD with minor issues: Score 6-7
+- Good HR Intern JD: Score 8-9
+- Excellent HR Intern JD: Score 10
+
+If the submission contains a JD for a different position, clearly state this in feedback and give a low score.`;
+  }
+
+  prompt += `\n\n=== EVALUATION INSTRUCTIONS ===
+Please evaluate this submission based on:
+1. How well it meets the task requirements (CRITICAL: Check if content matches the required position/role)
+2. Quality and completeness of the submission
+3. Professionalism and attention to detail
+4. If files are included, evaluate their content and relevance
+5. ${taskDetails.id === 'hr_t2' ? 'For resume screening: Evaluate selection quality, justification, and HR judgment' : taskDetails.id === 'hr_t1' ? 'For job description: Verify the JD is for HR Intern position, not another role' : 'Overall demonstration of HR skills and knowledge'}
 
 Provide a JSON response with:
 {
-  "score": <number 1-10>,
-  "feedback": "<detailed feedback>",
-  "improvements": ["<improvement 1>", "<improvement 2>"]
+  "score": <number 0-10>,
+  "feedback": "<detailed feedback explaining the score and what was done well or needs improvement>",
+  "improvements": ["<specific improvement 1>", "<specific improvement 2>", ...]
 }`;
+
+  return prompt;
 }
 
 /**
@@ -456,9 +568,28 @@ function generateMockPersonaResponse(message, persona) {
  * Generate mock evaluation (fallback)
  */
 function generateMockEvaluation(taskId, submission) {
+  // For hr_t1, check if submission mentions wrong position
+  let score = 5 + Math.floor(Math.random() * 4); // 5-8 default
+  let feedback = 'Good submission. You demonstrated understanding of the task requirements. Consider adding more detail in your response.';
+  
+  if (taskId === 'hr_t1') {
+    const submissionText = (submission.text || '').toLowerCase();
+    const fileContent = (submission.files || []).join(' ').toLowerCase();
+    const allContent = submissionText + ' ' + fileContent;
+    
+    // Check for wrong positions
+    const wrongPositions = ['java developer', 'software engineer', 'developer', 'programmer', 'engineer', 'python developer', 'full stack', 'backend developer', 'frontend developer'];
+    const hasWrongPosition = wrongPositions.some(pos => allContent.includes(pos));
+    
+    if (hasWrongPosition && !allContent.includes('hr intern') && !allContent.includes('human resources intern')) {
+      score = 2 + Math.floor(Math.random() * 2); // 2-3 for wrong position
+      feedback = 'The submission contains a job description for a different position (not HR Intern). This is a critical error. The task specifically requires a Job Description for an HR Intern position.';
+    }
+  }
+  
   return {
-    score: 7 + Math.floor(Math.random() * 2), // 7-8
-    feedback: 'Good submission. You demonstrated understanding of the task requirements. Consider adding more detail in your response.',
+    score: score,
+    feedback: feedback,
     improvements: [
       'Provide more specific examples',
       'Include measurable outcomes',

@@ -10,6 +10,7 @@ router.use(authenticate);
 // Routes
 router.get('/current', taskController.getCurrentTaskHandler);
 router.post('/submit', taskController.submitTask);
+router.post('/resubmit/:taskId', taskController.resubmitTask);
 router.get('/all', taskController.getAllTasksHandler);
 
 export default router;

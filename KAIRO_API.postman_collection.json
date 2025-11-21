@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "kairo-api-collection",
 		"name": "KAIRO API Collection",
-		"description": "Complete API collection for KAIRO Backend - AI HR Simulation Platform\n\n## Base URL\nDefault: `http://localhost:3000`\n\n## Authentication\nMost endpoints require Bearer token authentication. Use the Login endpoint first to get a token, which will be automatically saved to the `bearer_token` variable.\n\n## Variables\n- `base_url`: Base URL of the API (default: http://localhost:3000)\n- `bearer_token`: JWT token for authentication (auto-set after login)\n- `session_id`: Current simulation session ID (set after starting simulation)\n- `user_id`: Current user ID (set after login)\n\n## Use Cases\n1. **Authentication**: Sign up, login, and get current user\n2. **Simulation**: Start, manage, and end simulation sessions\n3. **Tasks**: Get current task, submit tasks, and view all tasks\n4. **Upload**: Upload files and audio\n5. **Audio**: Speech-to-text and text-to-speech conversion",
+		"description": "Complete API collection for KAIRO Backend - AI HR Simulation Platform\n\n## Base URL\nDefault: `http://localhost:3000`\n\n## Authentication\nMost endpoints require Bearer token authentication. Use the Login endpoint first to get a token, which will be automatically saved to the `bearer_token` variable.\n\n## Variables\n- `base_url`: Base URL of the API (default: http://localhost:3000)\n- `bearer_token`: JWT token for authentication (auto-set after login)\n- `session_id`: Current simulation session ID (set after starting simulation)\n- `user_id`: Current user ID (set after login)\n- `task_id`: Current task ID (for resubmit endpoint)\n\n## WebSocket Events\nSee the WebSocket Events section below for all Socket.io events.\n\n## Use Cases\n1. **Authentication**: Sign up, login, and get current user\n2. **Simulation**: Start, manage, and end simulation sessions\n3. **Tasks**: Get current task, submit tasks, resubmit tasks, and view all tasks\n4. **Upload**: Upload files and audio\n5. **Audio**: Speech-to-text and text-to-speech conversion",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -184,6 +184,9 @@
 									"    if (response.sessionId) {",
 									"        pm.collectionVariables.set('session_id', response.sessionId);",
 									"        console.log('✅ Simulation started! Session ID saved:', response.sessionId);",
+									"        if (response.currentTask) {",
+									"            pm.collectionVariables.set('task_id', response.currentTask.id);",
+									"        }",
 									"    }",
 									"}"
 								],
@@ -224,7 +227,7 @@
 								"start"
 							]
 						},
-						"description": "Start a new simulation session.\n\n**Request Body:**\n- `role` (string, required): User's role - must be either \"HR Executive\" or \"Business Analyst\"\n\n**Response:**\n- Returns session ID, context, initial message, and first task\n- Session ID is automatically saved to `session_id` variable\n\n**Note:**\n- Creates a new active simulation session\n- Automatically assigns the first task\n- Sends initial welcome message from Manager persona"
+						"description": "Start a new simulation session.\n\n**Request Body:**\n- `role` (string, required): User's role - must be either \"HR Executive\" or \"Business Analyst\"\n\n**Response:**\n- Returns session ID, context, welcome message, initial message, and first task\n- Session ID is automatically saved to `session_id` variable\n- Task ID is saved to `task_id` variable\n\n**Note:**\n- Creates a new active simulation session\n- Automatically assigns the first task\n- Sends initial welcome message from Manager persona (hardcoded)\n- Sends initial task assignment message"
 					},
 					"response": []
 				},
@@ -378,12 +381,33 @@
 								"current"
 							]
 						},
-						"description": "Get the current active task for the user's active simulation session.\n\n**Authentication:**\n- Requires Bearer token\n- Requires active simulation session\n\n**Response:**\n- Returns current task details (id, title, description, level, expectedOutput, status)\n- Returns task index\n- Returns null if all tasks are completed"
+						"description": "Get the current active task for the user's active simulation session.\n\n**Authentication:**\n- Requires Bearer token\n- Requires active simulation session\n\n**Response:**\n- Returns current task details (id, title, description, level, expectedOutput, status)\n- Returns task index\n- For hr_t2 task, also returns `resumes` array (10 shared resumes)\n- Returns `jobDescription` for hr_t2 (hardcoded Python Developer JD)\n- Returns null if all tasks are completed\n\n**Note:**\n- Resumes are pre-generated and shared across all users\n- Job description is hardcoded for Python Developer position"
 					},
 					"response": []
 				},
 				{
 					"name": "Submit Task",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    if (response.submission) {",
+									"        console.log('✅ Task submitted! Score:', response.submission.score);",
+									"        console.log('Can proceed:', response.canProceed);",
+									"        if (response.nextTask) {",
+									"            pm.collectionVariables.set('task_id', response.nextTask.id);",
+									"            console.log('Next task:', response.nextTask.title);",
+									"        }",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
 					"request": {
 						"auth": {
 							"type": "bearer",
@@ -404,7 +428,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"text\": \"Task submission text content\",\n    \"files\": [\n        \"https://example.com/file1.pdf\",\n        \"https://example.com/file2.docx\"\n    ],\n    \"audioUrl\": \"https://example.com/audio.mp3\"\n}"
+							"raw": "{\n    \"text\": \"Task submission text content\",\n    \"files\": [\n        \"https://example.com/file1.pdf\",\n        \"https://example.com/file2.docx\"\n    ],\n    \"audioUrl\": \"https://example.com/audio.mp3\",\n    \"selectedResumes\": [\n        \"resume_id_1\",\n        \"resume_id_2\",\n        \"resume_id_3\"\n    ],\n    \"resumeRatings\": [\n        {\n            \"resumeId\": \"resume_id_1\",\n            \"rating\": 8,\n            \"notes\": \"Strong Python experience\"\n        },\n        {\n            \"resumeId\": \"resume_id_2\",\n            \"rating\": 7,\n            \"notes\": \"Good fit\"\n        }\n    ],\n    \"isFinalSubmission\": false\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/api/tasks/submit",
@@ -417,7 +441,76 @@
 								"submit"
 							]
 						},
-						"description": "Submit a task for evaluation.\n\n**Request Body:**\n- `text` (string, optional): Text submission content\n- `files` (array, optional): Array of file URLs\n- `audioUrl` (string, optional): URL to audio file\n\n**Response:**\n- Returns submission details with AI evaluation (score, feedback, improvements)\n- Returns next task if available\n- Returns `completed: true` if all tasks are done\n\n**Note:**\n- Automatically evaluates submission using AI\n- Moves to next task after submission\n- Emits WebSocket events for task scoring and task assignment"
+						"description": "Submit a task for evaluation.\n\n**Request Body:**\n- `text` (string, optional): Text submission content\n- `files` (array, optional): Array of file URLs (PDF, DOCX, XLSX, CSV, TXT supported)\n- `audioUrl` (string, optional): URL to audio file\n- `selectedResumes` (array, optional): For hr_t2 task - Array of resume IDs selected\n- `resumeRatings` (array, optional): For hr_t2 task - Array of rating objects:\n  - `resumeId` (string): Resume ID\n  - `rating` (number, 1-10): Rating score\n  - `notes` (string, optional): Notes about the candidate\n- `isFinalSubmission` (boolean, optional): For scores 50-70, set to true to proceed despite low score\n\n**Response:**\n- Returns submission details with AI evaluation (score 0-10, feedback, improvements)\n- Returns `canProceed` (boolean): Whether user can proceed to next task (score >= 5)\n- Returns `requiresDecision` (boolean): Whether user needs to decide (score 50-70 in 0-100 scale, not applicable for 0-10)\n- Returns `message`: Status message\n- Returns `nextTask` if available and score >= 5\n- Returns `nextTaskMessage`: AI-generated message for next task\n- Returns `completed: true` if all tasks are done\n- Returns `scoreInfo`: Score details (min, max, passingScore: 5, currentScore)\n\n**Scoring System (0-10 scale):**\n- Score < 5: Rejected, stay on current task\n- Score >= 5: Can proceed to next task\n\n**Note:**\n- Automatically evaluates submission using AI\n- File contents are extracted and included in evaluation\n- For hr_t2, evaluates against hardcoded Python Developer job description\n- Moves to next task only if score >= 5\n- Emits WebSocket events: `task_scored`, `task_assigned`, `new_message`"
+					},
+					"response": []
+				},
+				{
+					"name": "Resubmit Task",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    if (response.submission) {",
+									"        console.log('✅ Task resubmitted! Score:', response.submission.score);",
+									"        console.log('Is resubmission:', response.submission.isResubmission);",
+									"        console.log('Can proceed:', response.canProceed);",
+									"        if (response.nextTask) {",
+									"            pm.collectionVariables.set('task_id', response.nextTask.id);",
+									"            console.log('Next task:', response.nextTask.title);",
+									"        }",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{bearer_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"text\": \"Updated task submission text\",\n    \"files\": [\n        \"https://example.com/updated_file.pdf\"\n    ],\n    \"selectedResumes\": [\n        \"resume_id_1\",\n        \"resume_id_2\",\n        \"resume_id_3\"\n    ],\n    \"resumeRatings\": [\n        {\n            \"resumeId\": \"resume_id_1\",\n            \"rating\": 9,\n            \"notes\": \"Excellent Python developer\"\n        }\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/tasks/resubmit/:taskId",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"tasks",
+								"resubmit",
+								":taskId"
+							],
+							"variable": [
+								{
+									"key": "taskId",
+									"value": "{{task_id}}",
+									"description": "Task ID to resubmit"
+								}
+							]
+						},
+						"description": "Resubmit a task to update the score. Allows users to re-upload and improve their submission.\n\n**Path Parameters:**\n- `taskId` (string, required): The ID of the task to resubmit\n\n**Request Body:**\n- `text` (string, optional): Updated text submission content\n- `files` (array, optional): Updated array of file URLs\n- `audioUrl` (string, optional): Updated URL to audio file\n- `selectedResumes` (array, optional): For hr_t2 task - Updated array of resume IDs\n- `resumeRatings` (array, optional): For hr_t2 task - Updated array of rating objects\n\n**Response:**\n- Returns new submission details with updated AI evaluation\n- Returns `isResubmission: true` flag\n- Returns `canProceed` (boolean): Whether user can proceed (score >= 5)\n- Returns `message`: Status message\n- Returns `nextTask` if available and score >= 5\n- Returns `nextTaskMessage`: AI-generated message for next task\n- Returns `scoreInfo`: Score details\n\n**Note:**\n- Creates a new submission record (does not overwrite previous)\n- Updates timeline with resubmission event\n- Same evaluation logic as initial submission\n- Can be called multiple times to improve score\n- Emits WebSocket events: `task_scored` (with isResubmission flag), `task_assigned`, `new_message`"
 					},
 					"response": []
 				},
@@ -447,12 +540,12 @@
 								"all"
 							]
 						},
-						"description": "Get all available tasks in the system.\n\n**Authentication:**\n- Requires Bearer token\n\n**Response:**\n- Returns array of all tasks with details (id, title, description, level, expectedOutput)"
+						"description": "Get all available tasks in the system.\n\n**Authentication:**\n- Requires Bearer token\n\n**Response:**\n- Returns array of all tasks with details (id, title, description, level, expectedOutput)\n\n**Available Tasks:**\n- `hr_t1`: Write a Job Description for an HR Intern (beginner)\n- `hr_t2`: Screen 10 resumes & shortlist top 3 candidates (beginner) - Uses Python Developer JD\n- `hr_t3`: Handle a conflict between two teammates (intermediate)\n- `hr_t4`: Create a complete HR policy (advanced)"
 					},
 					"response": []
 				}
 			],
-			"description": "Task management endpoints for viewing and submitting tasks during simulation."
+			"description": "Task management endpoints for viewing, submitting, and resubmitting tasks during simulation."
 		},
 		{
 			"name": "Upload",
@@ -493,7 +586,7 @@
 								"file"
 							]
 						},
-						"description": "Upload a file to the server.\n\n**Request:**\n- Content-Type: multipart/form-data\n- Field name: `file`\n- Accepts any file type\n\n**Response:**\n- Returns file URL, filename, size, and mimetype\n- File is stored in S3 or local storage\n\n**Note:**\n- Use the returned URL in task submissions"
+						"description": "Upload a file to the server.\n\n**Request:**\n- Content-Type: multipart/form-data\n- Field name: `file`\n- Accepts any file type\n- Supported file types for content extraction: PDF, DOCX, XLSX, CSV, TXT\n\n**Response:**\n- Returns file URL, filename, size, and mimetype\n- File is stored in S3 or local storage\n\n**Note:**\n- Use the returned URL in task submissions\n- File contents will be automatically extracted and included in AI evaluation\n- Supported formats: PDF, DOCX, XLSX, CSV, TXT"
 					},
 					"response": []
 				},
@@ -643,48 +736,5 @@
 			},
 			"response": []
 		}
-	],
-	"event": [
-		{
-			"listen": "prerequest",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					""
-				]
-			}
-		},
-		{
-			"listen": "test",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					""
-				]
-			}
-		}
-	],
-	"variable": [
-		{
-			"key": "base_url",
-			"value": "http://localhost:3000",
-			"type": "string"
-		},
-		{
-			"key": "bearer_token",
-			"value": "",
-			"type": "string"
-		},
-		{
-			"key": "session_id",
-			"value": "",
-			"type": "string"
-		},
-		{
-			"key": "user_id",
-			"value": "",
-			"type": "string"
-		}
 	]
 }
-
