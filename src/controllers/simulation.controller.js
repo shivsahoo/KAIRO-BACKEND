@@ -31,15 +31,27 @@ Create a realistic scenario where:
 
 Make it feel urgent and realistic, like a real workplace situation.`,
     
-    'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. We have shortlisted a candidate for the Python Developer position and need to schedule 1 interview with them.
+    'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. I need you to schedule an interview for a shortlisted candidate.
 
-Create a realistic scenario where:
-1. You explain that an interview needs to be scheduled for the shortlisted candidate
-2. Explain the importance of sending proper calendar invite and email with meeting link and resume
-3. Ask them how they would approach scheduling the interview
-4. Mention that the interview should be scheduled within the next 2 weeks
+YOUR RESPONSE MUST START WITH: "I need you to schedule an interview with the following details:"
 
-Make it feel like a real workplace task that requires attention to detail and professional communication.`,
+Then list these details EXACTLY as shown:
+- Candidate Email: [CANDIDATE_EMAIL]
+- Candidate Name: [CANDIDATE_NAME]
+- Interview Date & Time: [START_TIME] to [END_TIME]
+- Interview Type: video
+- Interviewer Email: [INTERVIEWER_EMAIL]
+- Interviewer Name: [INTERVIEWER_NAME]
+- Title: Interview - Python Developer Position
+
+Then provide these task instructions:
+1. Schedule the interview using the candidate email ([CANDIDATE_EMAIL]) and time ([START_TIME] to [END_TIME])
+2. Send an email to the candidate ([CANDIDATE_EMAIL]) with the resume attached
+3. CC the interviewer ([INTERVIEWER_EMAIL]) in the email
+
+IMPORTANT: The meeting link will be generated automatically when you schedule the interview in the calendar, so do not mention it in your message. Just include the email addresses, candidate name, interview time, and interviewer details.
+
+Write this as a professional, clear task assignment. Include ALL the details listed above in your response.`,
     
     'hr_t4': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. The company needs a comprehensive Remote Work Policy document. 
 
@@ -329,18 +341,101 @@ export const startSimulation = async (req, res) => {
           const { generatePersonaResponse } = await import('../services/ai.orchestrator.js');
           
           // Create a realistic HR scenario prompt based on the task
-          const scenarioPrompt = generateHRScenarioPrompt(firstTask, role, userName);
+          let scenarioPrompt = generateHRScenarioPrompt(firstTask, role, userName);
           
-          const aiResponse = await generatePersonaResponse(
-            scenarioPrompt,
-            'Manager',
-            {
-              conversationHistory: [],
-              currentTask: firstTask,
-              simulationRole: role,
+          // For hr_t3, generate specific interview details
+          if (firstTask.id === 'hr_t3') {
+            const { getSharedResumes } = await import('../services/resume.service.js');
+            const resumes = await getSharedResumes();
+            
+            // Select a candidate for the interview
+            const candidate = resumes
+              .sort((a, b) => (b.relevance || 0) - (a.relevance || 0))
+              .slice(0, 1)[0];
+            
+            // Generate meeting link
+            const meetingLink = `https://meet.company.com/interview/${Date.now()}-${candidate._id.toString().slice(-6)}`;
+            
+            // Generate interview time (next week, weekday, 10 AM - 11 AM)
+            const nextWeek = new Date();
+            nextWeek.setDate(nextWeek.getDate() + 7);
+            nextWeek.setHours(10, 0, 0, 0);
+            
+            // Ensure it's a weekday
+            while (nextWeek.getDay() === 0 || nextWeek.getDay() === 6) {
+              nextWeek.setDate(nextWeek.getDate() + 1);
             }
-          );
-          initialMessage = aiResponse.reply || `Welcome back! Here's your task: ${firstTask.title}. ${firstTask.description}. Let's get started!`;
+            
+            const startTime = new Date(nextWeek);
+            const endTime = new Date(nextWeek);
+            endTime.setHours(11, 0, 0, 0);
+            
+            // Interviewer details
+            const interviewerName = 'Sarah Chen';
+            const interviewerEmail = 'sarah.chen@company.com';
+            
+            // Format dates/times in readable format
+            const startTimeISO = startTime.toISOString();
+            const endTimeISO = endTime.toISOString();
+            const startTimeReadable = startTime.toLocaleString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric', 
+              hour: '2-digit', 
+              minute: '2-digit',
+              timeZoneName: 'short'
+            });
+            const endTimeReadable = endTime.toLocaleString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              timeZoneName: 'short'
+            });
+            
+            // Format dates/times in readable format for AI message
+            const interviewDateTime = `${startTimeReadable} to ${endTimeReadable}`;
+            
+            // Replace placeholders with actual values (use readable formats for AI message)
+            scenarioPrompt = scenarioPrompt
+              .replace(/\[CANDIDATE_EMAIL\]/g, candidate.email)
+              .replace(/\[CANDIDATE_NAME\]/g, candidate.candidateName)
+              .replace(/\[START_TIME\]/g, interviewDateTime)
+              .replace(/\[END_TIME\]/g, interviewDateTime)
+              .replace(/\[INTERVIEWER_EMAIL\]/g, interviewerEmail)
+              .replace(/\[INTERVIEWER_NAME\]/g, interviewerName);
+            
+            
+            // Hardcode the message to avoid AI hallucination
+            initialMessage = `Welcome! I need you to schedule an interview with the following details:
+
+**Interview Details:**
+- Candidate Email: ${candidate.email}
+- Candidate Name: ${candidate.candidateName}
+- Interview Date & Time: ${startTimeReadable} to ${endTimeReadable}
+- Interview Type: video
+- Interviewer Email: ${interviewerEmail}
+- Interviewer Name: ${interviewerName}
+- Title: Interview - Python Developer Position
+
+**Task Instructions:**
+1. Schedule the interview using the candidate email (${candidate.email}) and the time slot above
+2. Send an email to the candidate (${candidate.email}) with the resume attached
+3. Make sure to CC the interviewer (${interviewerEmail}) in the email
+
+Please schedule this interview and send the email. Let me know once you've completed both tasks.`;
+          } else {
+            // Generate AI response for non-hr_t3 tasks
+            const aiResponse = await generatePersonaResponse(
+              scenarioPrompt,
+              'Manager',
+              {
+                conversationHistory: [],
+                currentTask: firstTask,
+                simulationRole: role,
+              }
+            );
+            initialMessage = aiResponse.reply || `Welcome back! Here's your task: ${firstTask.title}. ${firstTask.description}. Let's get started!`;
+          }
         } else {
           initialMessage = `Welcome back! Let's continue with your tasks.`;
         }
