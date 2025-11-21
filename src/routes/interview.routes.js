@@ -1,0 +1,20 @@
+import express from 'express';
+import * as interviewController from '../controllers/interview.controller.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
+
+const router = express.Router();
+
+// All routes require authentication
+router.use(authenticate);
+
+// Routes
+router.get('/candidates', interviewController.getCandidates);
+router.get('/time-slots', interviewController.getAvailableTimeSlots);
+router.get('/interviews', interviewController.getInterviews);
+router.post('/schedule', interviewController.createInterviewSchedule);
+router.post('/send-email', interviewController.sendInterviewEmail);
+router.get('/inbox', interviewController.getInbox);
+// Candidate confirmation response removed - no conflicts needed
+
+export default router;
+

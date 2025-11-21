@@ -307,7 +307,7 @@ function shouldGenerateQuestion(conversationHistory, lastReply) {
 /**
  * Evaluate task submission using AI
  */
-export async function evaluateTask(taskId, submission, taskDetails, resumeDetails = null, jobDescription = null) {
+export async function evaluateTask(taskId, submission, taskDetails, resumeDetails = null, jobDescription = null, interviewDetails = null, emailDetails = null) {
   if (!aiClient) {
     return generateMockEvaluation(taskId, submission);
   }
@@ -332,7 +332,7 @@ export async function evaluateTask(taskId, submission, taskDetails, resumeDetail
     }
   }
 
-  const evaluationPrompt = createEvaluationPrompt(taskDetails, submission, fileContents, resumeDetails, jobDescription);
+  const evaluationPrompt = createEvaluationPrompt(taskDetails, submission, fileContents, resumeDetails, jobDescription, interviewDetails, emailDetails);
 
   try {
     if (provider === 'openai') {
@@ -459,7 +459,7 @@ Remember: You're Sarah, a real HR Manager talking to a colleague. Be natural, re
 /**
  * Create evaluation prompt
  */
-function createEvaluationPrompt(taskDetails, submission, fileContents = '', resumeDetails = null, jobDescription = null) {
+function createEvaluationPrompt(taskDetails, submission, fileContents = '', resumeDetails = null, jobDescription = null, interviewDetails = null, emailDetails = null) {
   let prompt = `Evaluate the following task submission:
 
 Task: ${taskDetails.title}
@@ -532,13 +532,101 @@ SCORING GUIDELINES:
 If the submission contains a JD for a different position, clearly state this in feedback and give a low score.`;
   }
 
+  // Add specific evaluation for hr_t3 (Interview Scheduling)
+  if (taskDetails.id === 'hr_t3') {
+    prompt += `\n\n=== CRITICAL EVALUATION FOR HR_T3 (INTERVIEW SCHEDULING) ===
+The task requires scheduling 3 interviews with candidates and stakeholders.
+
+IMPORTANT EVALUATION CRITERIA (Weighted Scoring):
+
+1. CORRECT INVITATIONS (40% weight - 4 points out of 10):
+   - Did the user schedule exactly 3 interviews? (Expected: 3)
+   - Were the correct candidates selected for interviews?
+   - Are the calendar invites complete with all necessary details?
+   - Did they send emails to the correct candidates?
+   - Are interview details (date, time, type, location/meeting link) accurate?
+   - Check if emails contain proper subject lines, greetings, and interview details
+
+2. EMAIL QUALITY (30% weight - 3 points out of 10):
+   - Were resumes attached to emails (especially for interviewer)?
+   - Were meeting links included in emails?
+   - Are emails sent to both candidates and interviewers?
+   - Is email content professional and clear?
+   - Check if all necessary details are included
+
+3. CLARITY (30% weight - 3 points out of 10):
+   - Are the emails clear, professional, and well-written?
+   - Is the communication concise but complete?
+   - Are calendar invites properly formatted with all required information?
+   - Is the tone appropriate for professional communication?
+   - Check grammar, spelling, and formatting
+
+EVALUATION DATA PROVIDED:
+${interviewDetails && interviewDetails.length > 0 ? `
+=== INTERVIEW SCHEDULES ===
+Total interviews scheduled: ${interviewDetails.length} (Expected: 3)
+${interviewDetails.map((interview, index) => `
+Interview ${index + 1}:
+- Candidate: ${interview.candidateName} (${interview.candidateEmail})
+- Title: ${interview.title}
+- Date/Time: ${new Date(interview.startTime).toLocaleString()} - ${new Date(interview.endTime).toLocaleString()}
+- Duration: ${interview.duration} minutes
+- Type: ${interview.interviewType}
+- Meeting Link: ${interview.meetingLink || 'NOT PROVIDED - CRITICAL'}
+- Location: ${interview.location || 'N/A'}
+- Status: ${interview.status}
+- Email Sent: ${interview.emailSent ? 'Yes' : 'No - CRITICAL'}
+`).join('\n')}
+` : 'No interviews scheduled.'}
+
+${emailDetails && emailDetails.length > 0 ? `
+=== EMAILS SENT/RECEIVED ===
+Total emails: ${emailDetails.length} (Expected: 6 emails minimum - 3 to candidates + 3 to interviewers)
+${emailDetails.map((email, index) => `
+Email ${index + 1}:
+- Type: ${email.type} (${email.type === 'sent' ? 'Sent' : 'Received'})
+- From: ${email.from.name} (${email.from.email})
+- To: ${email.to.map(t => `${t.name} (${t.email})`).join(', ')}
+- Subject: ${email.subject}
+- Body: ${email.body.substring(0, 200)}${email.body.length > 200 ? '...' : ''}
+- Candidate: ${email.candidateName || 'N/A'}
+- Attachments: ${email.attachments && email.attachments.length > 0 ? email.attachments.map(a => a.filename).join(', ') : 'NONE - CRITICAL (Resume should be attached)'}
+- Meeting Link in Email: ${email.body && (email.body.toLowerCase().includes('meet') || email.body.includes('https://') || email.body.includes('http://')) ? 'Yes' : 'NOT FOUND - CRITICAL'}
+- Sent/Received At: ${email.sentAt ? new Date(email.sentAt).toLocaleString() : 'N/A'}
+`).join('\n')}
+
+IMPORTANT EVALUATION CRITERIA:
+1. Check if resumes are attached to emails (especially interviewer emails)
+2. Check if meeting links are included in email body
+3. Check if emails were sent to both candidates AND interviewers (should be 6 emails minimum - 3 pairs)
+4. Check if correct candidates received emails
+` : 'No emails found. CRITICAL ERROR - Emails should be sent to candidates and interviewers.'}
+
+SCORING BREAKDOWN:
+- If less than 3 interviews scheduled: Deduct 2-3 points (Correct Invitations - 40%)
+- If wrong candidates selected: Deduct 2-3 points (Correct Invitations - 40%)
+- If emails sent to wrong candidates: Deduct 2-3 points (Correct Invitations - 40%)
+- If resumes NOT attached to emails (especially interviewer): Deduct 1-2 points (Email Quality - 30%)
+- If meeting links NOT included in emails: Deduct 1-2 points (Email Quality - 30%)
+- If emails NOT sent to both candidate and interviewer: Deduct 1-2 points (Email Quality - 30%)
+- If emails lack clarity/professionalism: Deduct 1-2 points (Clarity - 30%)
+- If calendar invites incomplete: Deduct 1-2 points (Clarity - 30%)
+
+SCORING EXAMPLES:
+- 8-10: All 3 interviews scheduled correctly, emails sent to both candidate and interviewer with resumes and links, clear communication
+- 6-7: 3 interviews scheduled but minor issues with emails (missing resume attachment or link)
+- 4-5: Less than 3 interviews or major issues with emails (no attachments, no links, missing recipients)
+- 0-3: No interviews scheduled, wrong candidates, or critical errors in emails
+`;
+  }
+
   prompt += `\n\n=== EVALUATION INSTRUCTIONS ===
 Please evaluate this submission based on:
 1. How well it meets the task requirements (CRITICAL: Check if content matches the required position/role)
 2. Quality and completeness of the submission
 3. Professionalism and attention to detail
 4. If files are included, evaluate their content and relevance
-5. ${taskDetails.id === 'hr_t2' ? 'For resume screening: Evaluate selection quality, justification, and HR judgment' : taskDetails.id === 'hr_t1' ? 'For job description: Verify the JD is for HR Intern position, not another role' : 'Overall demonstration of HR skills and knowledge'}
+5. ${taskDetails.id === 'hr_t2' ? 'For resume screening: Evaluate selection quality, justification, and HR judgment' : taskDetails.id === 'hr_t1' ? 'For job description: Verify the JD is for HR Intern position, not another role' : taskDetails.id === 'hr_t3' ? 'For interview scheduling: Evaluate correct invitations (40% - check if 3 interviews scheduled), email quality (30% - check if resumes attached and links included), and clarity (30% - check professional communication)' : 'Overall demonstration of HR skills and knowledge'}
 
 Provide a JSON response with:
 {

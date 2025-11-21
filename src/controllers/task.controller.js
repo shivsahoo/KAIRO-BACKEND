@@ -144,6 +144,36 @@ export const getCurrentTaskHandler = async (req, res) => {
       allTasksCompleted: !currentTask,
     };
 
+    // If it's hr_t3, include candidates from resumes
+    if (currentTask && currentTask.id === 'hr_t3') {
+      try {
+        // Get candidates from resumes (use shared resumes or create interview-specific ones)
+        const { getSharedResumes } = await import('../services/resume.service.js');
+        const resumes = await getSharedResumes();
+        
+        // Select 4-5 candidates for interviews (prefer good/excellent quality)
+        const candidates = resumes
+          .sort((a, b) => (b.relevance || 0) - (a.relevance || 0))
+          .slice(0, 5)
+          .map(resume => ({
+            id: resume._id.toString(),
+            candidateName: resume.candidateName,
+            email: resume.email,
+            phone: resume.phone,
+            experience: resume.experience,
+            skills: resume.skills,
+            education: resume.education,
+            summary: resume.summary,
+            // Don't expose quality and relevance
+          }));
+        
+        taskResponse.candidates = candidates;
+      } catch (error) {
+        console.error('Error fetching candidates for hr_t3:', error);
+        taskResponse.candidates = [];
+      }
+    }
+    
     // If it's hr_t2, include resumes and hardcoded Python Developer job description
     if (currentTask && currentTask.id === 'hr_t2') {
       try {
@@ -270,6 +300,16 @@ export const submitTask = async (req, res) => {
       }
     }
 
+    // Add interview schedules and emails for hr_t3
+    if (currentTask.id === 'hr_t3') {
+      if (req.body.interviewIds && Array.isArray(req.body.interviewIds)) {
+        submissionData.interviewIds = req.body.interviewIds;
+      }
+      if (req.body.emailIds && Array.isArray(req.body.emailIds)) {
+        submissionData.emailIds = req.body.emailIds;
+      }
+    }
+
     const submission = await TaskSubmission.create(submissionData);
 
     // Get task details for evaluation
@@ -348,8 +388,106 @@ This is an excellent opportunity for a Python developer to work on challenging p
       }
     }
 
+    // For hr_t3, get interview schedules and emails for evaluation
+    let interviewDetails = null;
+    let emailDetails = null;
+    
+    if (currentTask.id === 'hr_t3') {
+      const InterviewSchedule = (await import('../models/InterviewSchedule.model.js')).default;
+      const Email = (await import('../models/Email.model.js')).default;
+      
+      // Get interview schedules
+      if (submission.interviewIds && submission.interviewIds.length > 0) {
+        const interviews = await InterviewSchedule.find({
+          _id: { $in: submission.interviewIds },
+        }).populate('candidateId');
+        
+        interviewDetails = interviews.map(interview => ({
+          id: interview._id.toString(),
+          candidateId: interview.candidateId?._id?.toString(),
+          candidateName: interview.candidateName,
+          candidateEmail: interview.candidateEmail,
+          title: interview.title,
+          startTime: interview.startTime,
+          endTime: interview.endTime,
+          duration: interview.duration,
+          interviewType: interview.interviewType,
+          location: interview.location,
+          meetingLink: interview.meetingLink,
+          status: interview.status,
+          emailSent: interview.emailSent,
+        }));
+      }
+      
+      // Get emails
+      if (submission.emailIds && submission.emailIds.length > 0) {
+        const emails = await Email.find({
+          _id: { $in: submission.emailIds },
+        }).populate('candidateId');
+        
+        emailDetails = emails.map(email => ({
+          id: email._id.toString(),
+          type: email.type,
+          from: email.from,
+          to: email.to,
+          subject: email.subject,
+          body: email.body,
+          attachments: email.attachments || [], // Include attachments for evaluation
+          candidateId: email.candidateId?._id?.toString(),
+          candidateName: email.candidateName,
+          interviewScheduleId: email.interviewScheduleId?.toString(),
+          sentAt: email.sentAt,
+        }));
+      }
+      
+      // Get all interviews and emails if not provided in submission
+      if (!interviewDetails || interviewDetails.length === 0) {
+        const allInterviews = await InterviewSchedule.find({
+          simulationId: session._id,
+          taskId: 'hr_t3',
+        }).populate('candidateId');
+        
+        interviewDetails = allInterviews.map(interview => ({
+          id: interview._id.toString(),
+          candidateId: interview.candidateId?._id?.toString(),
+          candidateName: interview.candidateName,
+          candidateEmail: interview.candidateEmail,
+          title: interview.title,
+          startTime: interview.startTime,
+          endTime: interview.endTime,
+          duration: interview.duration,
+          interviewType: interview.interviewType,
+          location: interview.location,
+          meetingLink: interview.meetingLink,
+          status: interview.status,
+          emailSent: interview.emailSent,
+        }));
+      }
+      
+      if (!emailDetails || emailDetails.length === 0) {
+        const allEmails = await Email.find({
+          simulationId: session._id,
+          taskId: 'hr_t3',
+        }).populate('candidateId');
+        
+        emailDetails = allEmails.map(email => ({
+          id: email._id.toString(),
+          type: email.type,
+          from: email.from,
+          to: email.to,
+          subject: email.subject,
+          body: email.body,
+          attachments: email.attachments || [], // Include attachments for evaluation
+          candidateId: email.candidateId?._id?.toString(),
+          candidateName: email.candidateName,
+          interviewScheduleId: email.interviewScheduleId?.toString(),
+          sentAt: email.sentAt,
+        }));
+      }
+    }
+
     // Evaluate submission using AI
-    const evaluation = await evaluateTask(currentTask.id, submission, taskDetails, resumeDetails, jobDescription);
+    const evaluation = await evaluateTask(currentTask.id, submission, taskDetails, resumeDetails, jobDescription, interviewDetails, emailDetails);
 
     // Update submission with evaluation
     submission.score = evaluation.score;
@@ -618,6 +756,20 @@ export const resubmitTask = async (req, res) => {
       }
     }
 
+    // Add interview schedules and emails for hr_t3
+    if (taskId === 'hr_t3') {
+      if (req.body.interviewIds && Array.isArray(req.body.interviewIds)) {
+        submissionData.interviewIds = req.body.interviewIds;
+      } else {
+        submissionData.interviewIds = existingSubmission.interviewIds || [];
+      }
+      if (req.body.emailIds && Array.isArray(req.body.emailIds)) {
+        submissionData.emailIds = req.body.emailIds;
+      } else {
+        submissionData.emailIds = existingSubmission.emailIds || [];
+      }
+    }
+
     const submission = await TaskSubmission.create(submissionData);
 
     // Get task details for evaluation
@@ -696,8 +848,106 @@ This is an excellent opportunity for a Python developer to work on challenging p
       }
     }
 
+    // For hr_t3, get interview schedules and emails for evaluation
+    let interviewDetails = null;
+    let emailDetails = null;
+    
+    if (taskId === 'hr_t3') {
+      const InterviewSchedule = (await import('../models/InterviewSchedule.model.js')).default;
+      const Email = (await import('../models/Email.model.js')).default;
+      
+      // Get interview schedules
+      if (submission.interviewIds && submission.interviewIds.length > 0) {
+        const interviews = await InterviewSchedule.find({
+          _id: { $in: submission.interviewIds },
+        }).populate('candidateId');
+        
+        interviewDetails = interviews.map(interview => ({
+          id: interview._id.toString(),
+          candidateId: interview.candidateId?._id?.toString(),
+          candidateName: interview.candidateName,
+          candidateEmail: interview.candidateEmail,
+          title: interview.title,
+          startTime: interview.startTime,
+          endTime: interview.endTime,
+          duration: interview.duration,
+          interviewType: interview.interviewType,
+          location: interview.location,
+          meetingLink: interview.meetingLink,
+          status: interview.status,
+          emailSent: interview.emailSent,
+        }));
+      }
+      
+      // Get emails
+      if (submission.emailIds && submission.emailIds.length > 0) {
+        const emails = await Email.find({
+          _id: { $in: submission.emailIds },
+        }).populate('candidateId');
+        
+        emailDetails = emails.map(email => ({
+          id: email._id.toString(),
+          type: email.type,
+          from: email.from,
+          to: email.to,
+          subject: email.subject,
+          body: email.body,
+          attachments: email.attachments || [], // Include attachments for evaluation
+          candidateId: email.candidateId?._id?.toString(),
+          candidateName: email.candidateName,
+          interviewScheduleId: email.interviewScheduleId?.toString(),
+          sentAt: email.sentAt,
+        }));
+      }
+      
+      // Get all interviews and emails if not provided in submission
+      if (!interviewDetails || interviewDetails.length === 0) {
+        const allInterviews = await InterviewSchedule.find({
+          simulationId: session._id,
+          taskId: 'hr_t3',
+        }).populate('candidateId');
+        
+        interviewDetails = allInterviews.map(interview => ({
+          id: interview._id.toString(),
+          candidateId: interview.candidateId?._id?.toString(),
+          candidateName: interview.candidateName,
+          candidateEmail: interview.candidateEmail,
+          title: interview.title,
+          startTime: interview.startTime,
+          endTime: interview.endTime,
+          duration: interview.duration,
+          interviewType: interview.interviewType,
+          location: interview.location,
+          meetingLink: interview.meetingLink,
+          status: interview.status,
+          emailSent: interview.emailSent,
+        }));
+      }
+      
+      if (!emailDetails || emailDetails.length === 0) {
+        const allEmails = await Email.find({
+          simulationId: session._id,
+          taskId: 'hr_t3',
+        }).populate('candidateId');
+        
+        emailDetails = allEmails.map(email => ({
+          id: email._id.toString(),
+          type: email.type,
+          from: email.from,
+          to: email.to,
+          subject: email.subject,
+          body: email.body,
+          attachments: email.attachments || [], // Include attachments for evaluation
+          candidateId: email.candidateId?._id?.toString(),
+          candidateName: email.candidateName,
+          interviewScheduleId: email.interviewScheduleId?.toString(),
+          sentAt: email.sentAt,
+        }));
+      }
+    }
+
     // Evaluate submission using AI
-    const evaluation = await evaluateTask(taskId, submission, taskDetails, resumeDetails, jobDescription);
+    const evaluation = await evaluateTask(taskId, submission, taskDetails, resumeDetails, jobDescription, interviewDetails, emailDetails);
 
     // Update submission with evaluation
     submission.score = evaluation.score;

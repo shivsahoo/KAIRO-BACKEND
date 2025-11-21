@@ -31,15 +31,16 @@ Create a realistic scenario where:
 
 Make it feel urgent and realistic, like a real workplace situation.`,
     
-    'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. Two team members are in a serious conflict that's affecting team productivity. 
+    'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. We have shortlisted 4-5 candidates for the Python Developer position and need to schedule 3 interviews with them and stakeholders.
 
-Create a realistic, urgent scenario where:
-1. You explain the situation with specific details
-2. Describe the impact on the team/workplace
-3. Explain why it needs immediate attention
-4. Ask them how they would handle the conflict resolution
+Create a realistic scenario where:
+1. You explain that interviews need to be scheduled for the shortlisted candidates
+2. Mention that some candidates or stakeholders may have conflicts, so they need to handle those professionally
+3. Explain the importance of sending proper calendar invites and emails
+4. Ask them how they would approach scheduling the interviews and handling any conflicts
+5. Mention that interviews should be scheduled within the next 2 weeks
 
-Make it feel like a real workplace escalation that requires professional HR intervention.`,
+Make it feel like a real workplace task that requires attention to detail and professional communication.`,
     
     'hr_t4': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. The company needs a comprehensive Remote Work Policy document. 
 

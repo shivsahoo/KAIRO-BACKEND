@@ -9,6 +9,7 @@ import simulationRoutes from './src/routes/simulation.routes.js';
 import taskRoutes from './src/routes/task.routes.js';
 import uploadRoutes from './src/routes/upload.routes.js';
 import audioRoutes from './src/routes/audio.routes.js';
+import interviewRoutes from './src/routes/interview.routes.js';
 import { initializeSocket } from './src/sockets/socket.handler.js';
 import { setSocketInstance } from './src/utils/socket.instance.js';
 import { initializeSharedResumes } from './src/services/resume.service.js';
@@ -55,6 +56,7 @@ app.use('/api/simulation', simulationRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/audio', audioRoutes);
+app.use('/api/interviews', interviewRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

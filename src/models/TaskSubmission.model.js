@@ -40,6 +40,15 @@ const taskSubmissionSchema = new mongoose.Schema({
     },
     notes: String,
   }],
+  // For hr_t3: interview schedules and emails
+  interviewIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'InterviewSchedule',
+  }],
+  emailIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Email',
+  }],
   submittedAt: {
     type: Date,
     default: Date.now,

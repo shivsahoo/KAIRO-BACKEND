@@ -17,9 +17,9 @@ export const HR_TASKS = [
   {
     id: 'hr_t3',
     level: 'intermediate',
-    title: 'Handle a conflict between two teammates',
-    description: 'Chat simulation between two employees arguing.',
-    expectedOutput: 'Conflict summary + action plan',
+    title: 'Schedule Interviews (Calendar + Mail)',
+    description: 'Schedule 3 interviews with candidates and stakeholders. Pick time slots, create calendar invites, and send emails to candidates.',
+    expectedOutput: 'Calendar events + sent emails',
   },
   {
     id: 'hr_t4',
