@@ -33,25 +33,43 @@ Create a realistic scenario where:
 
 Make it feel urgent and realistic, like a real workplace situation. The resumes are already prepared and available for review.`,
     
-    'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. Two team members are in a serious conflict that's affecting team productivity. 
+    'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. I need you to schedule an interview for a shortlisted candidate.
 
-Create a realistic, urgent scenario where:
-1. You explain the situation with specific details
-2. Describe the impact on the team/workplace
-3. Explain why it needs immediate attention
-4. Ask them how they would handle the conflict resolution
+YOUR RESPONSE MUST START WITH: "I need you to schedule an interview with the following details:"
 
-Make it feel like a real workplace escalation that requires professional HR intervention.`,
+Then list these details EXACTLY as shown:
+- Candidate Email: [CANDIDATE_EMAIL]
+- Candidate Name: [CANDIDATE_NAME]
+- Interview Date & Time: [START_TIME] to [END_TIME]
+- Interview Type: video
+- Interviewer Email: [INTERVIEWER_EMAIL]
+- Interviewer Name: [INTERVIEWER_NAME]
+- Title: Interview - Python Developer Position
+
+Then provide these task instructions:
+1. Schedule the interview using the candidate email ([CANDIDATE_EMAIL]) and time ([START_TIME] to [END_TIME])
+2. Send an email to the candidate ([CANDIDATE_EMAIL]) with the resume attached
+3. CC the interviewer ([INTERVIEWER_EMAIL]) in the email
+
+IMPORTANT: The meeting link will be generated automatically when you schedule the interview in the calendar, so do not mention it in your message. Just include the email addresses, candidate name, interview time, and interviewer details.
+
+Write this as a professional, clear task assignment. Include ALL the details listed above in your response.`,
     
-    'hr_t4': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. The company needs a comprehensive Remote Work Policy document. 
+    'hr_t4': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. We need to screen candidates for our Software Developer position, and I'd like you to conduct a mock HR screening call.
 
 Create a realistic scenario where:
-1. Explain why this policy is needed now (company growth, compliance, etc.)
-2. Describe what stakeholders need to be considered
-3. Explain the scope and requirements
-4. Ask them how they would approach creating this policy
+1. Explain the importance of phone screening in the recruitment process
+2. Mention that you've set up an AI-powered candidate simulation for practice
+3. Provide context about the Software Developer role requirements
+4. Instruct them to conduct a 10-15 minute screening call
+5. Ask them to evaluate the candidate's communication, technical background, and cultural fit
 
-Make it feel like a real strategic HR initiative.`,
+After the call, they should provide:
+- Call transcript or detailed notes
+- Assessment of the candidate's suitability
+- Key observations and recommendations
+
+Make it feel like a real HR training scenario with practical guidance.`,
   };
 
   return scenarios[task.id] || `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. Introduce the next task: "${task.title}". ${task.description}. Create a natural, professional conversation that introduces this task in a realistic workplace context. Acknowledge their previous work and transition smoothly to the new task. Ask them how they would approach it.`;
@@ -396,94 +414,66 @@ This is an excellent opportunity for a Python developer to work on challenging p
       const InterviewSchedule = (await import('../models/InterviewSchedule.model.js')).default;
       const Email = (await import('../models/Email.model.js')).default;
       
-      // Get interview schedules
-      if (submission.interviewIds && submission.interviewIds.length > 0) {
-        const interviews = await InterviewSchedule.find({
-          _id: { $in: submission.interviewIds },
-        }).populate('candidateId');
-        
-        interviewDetails = interviews.map(interview => ({
-          id: interview._id.toString(),
-          candidateId: interview.candidateId?._id?.toString(),
-          candidateName: interview.candidateName,
-          candidateEmail: interview.candidateEmail,
-          title: interview.title,
-          startTime: interview.startTime,
-          endTime: interview.endTime,
-          duration: interview.duration,
-          interviewType: interview.interviewType,
-          location: interview.location,
-          meetingLink: interview.meetingLink,
-          status: interview.status,
-          emailSent: interview.emailSent,
-        }));
-      }
+      // Automatically fetch ALL interview schedules and emails for this task (no need for IDs in submission)
+      const allInterviews = await InterviewSchedule.find({
+        simulationId: session._id,
+        taskId: 'hr_t3',
+        userId: session.userId,
+      }).populate('candidateId').sort({ createdAt: -1 }); // Most recent first
       
-      // Get emails
-      if (submission.emailIds && submission.emailIds.length > 0) {
-        const emails = await Email.find({
-          _id: { $in: submission.emailIds },
-        }).populate('candidateId');
-        
-        emailDetails = emails.map(email => ({
-          id: email._id.toString(),
-          type: email.type,
-          from: email.from,
-          to: email.to,
-          subject: email.subject,
-          body: email.body,
-          attachments: email.attachments || [], // Include attachments for evaluation
-          candidateId: email.candidateId?._id?.toString(),
-          candidateName: email.candidateName,
-          interviewScheduleId: email.interviewScheduleId?.toString(),
-          sentAt: email.sentAt,
-        }));
-      }
+      interviewDetails = allInterviews.map(interview => ({
+        id: interview._id.toString(),
+        candidateId: interview.candidateId?._id?.toString(),
+        candidateName: interview.candidateName,
+        candidateEmail: interview.candidateEmail,
+        interviewerName: interview.interviewerName,
+        interviewerEmail: interview.interviewerEmail,
+        title: interview.title,
+        startTime: interview.startTime,
+        endTime: interview.endTime,
+        duration: interview.duration,
+        interviewType: interview.interviewType,
+        location: interview.location,
+        meetingLink: interview.meetingLink,
+        status: interview.status,
+        emailSent: interview.emailSent,
+      }));
       
-      // Get all interviews and emails if not provided in submission
-      if (!interviewDetails || interviewDetails.length === 0) {
-        const allInterviews = await InterviewSchedule.find({
-          simulationId: session._id,
-          taskId: 'hr_t3',
-        }).populate('candidateId');
-        
-        interviewDetails = allInterviews.map(interview => ({
-          id: interview._id.toString(),
-          candidateId: interview.candidateId?._id?.toString(),
-          candidateName: interview.candidateName,
-          candidateEmail: interview.candidateEmail,
-          title: interview.title,
-          startTime: interview.startTime,
-          endTime: interview.endTime,
-          duration: interview.duration,
-          interviewType: interview.interviewType,
-          location: interview.location,
-          meetingLink: interview.meetingLink,
-          status: interview.status,
-          emailSent: interview.emailSent,
-        }));
-      }
+      // Automatically fetch ALL sent emails for this task
+      const allEmails = await Email.find({
+        simulationId: session._id,
+        taskId: 'hr_t3',
+        userId: session.userId,
+        type: 'sent', // Only sent emails for evaluation
+      }).sort({ sentAt: -1 }); // Most recent first
       
-      if (!emailDetails || emailDetails.length === 0) {
-        const allEmails = await Email.find({
-          simulationId: session._id,
-          taskId: 'hr_t3',
-        }).populate('candidateId');
-        
-        emailDetails = allEmails.map(email => ({
-          id: email._id.toString(),
-          type: email.type,
-          from: email.from,
-          to: email.to,
-          subject: email.subject,
-          body: email.body,
-          attachments: email.attachments || [], // Include attachments for evaluation
-          candidateId: email.candidateId?._id?.toString(),
-          candidateName: email.candidateName,
-          interviewScheduleId: email.interviewScheduleId?.toString(),
-          sentAt: email.sentAt,
-        }));
-      }
+      // Group emails by candidate email and keep only the latest one for each candidate
+      const latestEmailsMap = new Map();
+      allEmails.forEach(email => {
+        const candidateEmail = email.to && email.to.length > 0 ? email.to[0].email : null;
+        if (candidateEmail) {
+          // Only keep the first (most recent) email for each candidate email
+          if (!latestEmailsMap.has(candidateEmail)) {
+            latestEmailsMap.set(candidateEmail, email);
+          }
+        }
+      });
+      
+      // Convert map to array of email details (only latest emails)
+      emailDetails = Array.from(latestEmailsMap.values()).map(email => ({
+        id: email._id.toString(),
+        type: email.type,
+        from: email.from,
+        to: email.to,
+        cc: email.cc || [], // Include CC for evaluation
+        subject: email.subject,
+        body: email.body,
+        attachments: email.attachments || [], // Include attachments for evaluation
+        candidateId: email.candidateId?.toString(),
+        candidateName: email.candidateName,
+        interviewScheduleId: email.interviewScheduleId?.toString(),
+        sentAt: email.sentAt,
+      }));
     }
 
     // Evaluate submission using AI
@@ -540,35 +530,110 @@ This is an excellent opportunity for a Python developer to work on challenging p
 
       // Generate AI message for the new task
       try {
-        // For hr_t2, resumes are already pre-generated (shared), so no need to generate
-        const scenarioPrompt = generateHRScenarioPrompt(nextTask, role, userName);
+        let nextTaskMessageContent = '';
         
-        // Get conversation history for context
-        const recentMessages = await Message.find({
-          simulationId: session._id,
-        })
-          .sort({ createdAt: -1 })
-          .limit(10);
-        
-        // Reverse to get chronological order
-        recentMessages.reverse();
-
-        const conversationHistory = recentMessages.map(msg => ({
-          sender: msg.sender === 'user' ? 'user' : 'assistant',
-          text: msg.text,
-        }));
-
-        const aiResponse = await generatePersonaResponse(
-          scenarioPrompt,
-          'Manager',
-          {
-            conversationHistory,
-            currentTask: nextTask,
-            simulationRole: role,
+        // For hr_t3, hardcode the message with actual candidate details to avoid AI hallucination
+        if (nextTask.id === 'hr_t3') {
+          const { getSharedResumes } = await import('../services/resume.service.js');
+          const resumes = await getSharedResumes();
+          
+          // Select a candidate for the interview
+          const candidate = resumes
+            .sort((a, b) => (b.relevance || 0) - (a.relevance || 0))
+            .slice(0, 1)[0];
+          
+          // Generate meeting link
+          const meetingLink = `https://meet.company.com/interview/${Date.now()}-${candidate._id.toString().slice(-6)}`;
+          
+          // Generate interview time (next week, weekday, 10 AM - 11 AM)
+          const nextWeek = new Date();
+          nextWeek.setDate(nextWeek.getDate() + 7);
+          nextWeek.setHours(10, 0, 0, 0);
+          
+          // Ensure it's a weekday
+          while (nextWeek.getDay() === 0 || nextWeek.getDay() === 6) {
+            nextWeek.setDate(nextWeek.getDate() + 1);
           }
-        );
+          
+          const startTime = new Date(nextWeek);
+          const endTime = new Date(nextWeek);
+          endTime.setHours(11, 0, 0, 0);
+          
+          // Interviewer details
+          const interviewerName = 'Sarah Chen';
+          const interviewerEmail = 'sarah.chen@company.com';
+          
+          // Format dates/times in readable format
+          const startTimeISO = startTime.toISOString();
+          const endTimeISO = endTime.toISOString();
+          const startTimeReadable = startTime.toLocaleString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit',
+            timeZoneName: 'short'
+          });
+          const endTimeReadable = endTime.toLocaleString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            timeZoneName: 'short'
+          });
+          
+          // Hardcode the message to avoid AI hallucination
+          nextTaskMessageContent = `Great work on the previous task! Now I need you to schedule an interview with the following details:
 
-        const taskMessageText = aiResponse.reply || `Great work on the previous task! Now I have a new assignment for you: ${nextTask.title}. ${nextTask.description}. Let's get started!`;
+**Interview Details:**
+- Candidate Email: ${candidate.email}
+- Candidate Name: ${candidate.candidateName}
+- Interview Date & Time: ${startTimeReadable} to ${endTimeReadable}
+- Interview Type: video
+- Interviewer Email: ${interviewerEmail}
+- Interviewer Name: ${interviewerName}
+- Title: Interview - Python Developer Position
+
+**Task Instructions:**
+1. Schedule the interview using the candidate email (${candidate.email}) and the time slot above
+2. Send an email to the candidate (${candidate.email}) with the resume attached
+3. Make sure to CC the interviewer (${interviewerEmail}) in the email
+
+Please schedule this interview and send the email. Let me know once you've completed both tasks.`;
+        }
+        
+        // If not hr_t3 or no hardcoded message, generate AI response
+        if (!nextTaskMessageContent) {
+          let scenarioPrompt = generateHRScenarioPrompt(nextTask, role, userName);
+          
+          // Get conversation history for context
+          const recentMessages = await Message.find({
+            simulationId: session._id,
+          })
+            .sort({ createdAt: -1 })
+            .limit(10);
+          
+          // Reverse to get chronological order
+          recentMessages.reverse();
+
+          const conversationHistory = recentMessages.map(msg => ({
+            sender: msg.sender === 'user' ? 'user' : 'assistant',
+            text: msg.text,
+          }));
+
+          const aiResponse = await generatePersonaResponse(
+            scenarioPrompt,
+            'Manager',
+            {
+              conversationHistory,
+              currentTask: nextTask,
+              simulationRole: role,
+            }
+          );
+
+          nextTaskMessageContent = aiResponse.reply || `Great work on the previous task! Now I have a new assignment for you: ${nextTask.title}. ${nextTask.description}. Let's get started!`;
+        }
+
+        const taskMessageText = nextTaskMessageContent;
 
         // Save the message to database
         const taskMessage = await Message.create({
@@ -716,11 +781,8 @@ export const resubmitTask = async (req, res) => {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    // Check if current task matches
-    const currentTask = getCurrentTask(session.currentTaskIndex);
-    if (currentTask?.id !== taskId) {
-      return res.status(400).json({ message: 'Task ID does not match current task' });
-    }
+    // Note: Removed task validation - users can resubmit ANY task at ANY time
+    // This allows flexibility to improve scores for previous tasks while working on current task
 
     // Find existing submission
     const existingSubmission = await TaskSubmission.findOne({
@@ -848,7 +910,7 @@ This is an excellent opportunity for a Python developer to work on challenging p
       }
     }
 
-    // For hr_t3, get interview schedules and emails for evaluation
+    // For hr_t3, automatically fetch all interviews and emails for evaluation
     let interviewDetails = null;
     let emailDetails = null;
     
@@ -856,11 +918,14 @@ This is an excellent opportunity for a Python developer to work on challenging p
       const InterviewSchedule = (await import('../models/InterviewSchedule.model.js')).default;
       const Email = (await import('../models/Email.model.js')).default;
       
-      // Get interview schedules
-      if (submission.interviewIds && submission.interviewIds.length > 0) {
-        const interviews = await InterviewSchedule.find({
-          _id: { $in: submission.interviewIds },
-        }).populate('candidateId');
+      // Automatically fetch all interview schedules for this task (not just submitted ones)
+      const interviews = await InterviewSchedule.find({
+        simulationId: session._id,
+        taskId: 'hr_t3',
+        userId: session.userId,
+      }).populate('candidateId').sort({ createdAt: -1 }); // Most recent first
+      
+      if (interviews && interviews.length > 0) {
         
         interviewDetails = interviews.map(interview => ({
           id: interview._id.toString(),
@@ -893,6 +958,7 @@ This is an excellent opportunity for a Python developer to work on challenging p
           subject: email.subject,
           body: email.body,
           attachments: email.attachments || [], // Include attachments for evaluation
+          cc: email.cc || [], // Include CC for evaluation
           candidateId: email.candidateId?._id?.toString(),
           candidateName: email.candidateName,
           interviewScheduleId: email.interviewScheduleId?.toString(),
@@ -928,17 +994,32 @@ This is an excellent opportunity for a Python developer to work on challenging p
         const allEmails = await Email.find({
           simulationId: session._id,
           taskId: 'hr_t3',
-        }).populate('candidateId');
+          type: 'sent',
+        }).sort({ sentAt: -1 }); // Most recent first
         
-        emailDetails = allEmails.map(email => ({
+        // Group emails by candidate email and keep only the latest one for each candidate
+        const latestEmailsMap = new Map();
+        allEmails.forEach(email => {
+          const candidateEmail = email.to && email.to.length > 0 ? email.to[0].email : null;
+          if (candidateEmail) {
+            // Only keep the first (most recent) email for each candidate email
+            if (!latestEmailsMap.has(candidateEmail)) {
+              latestEmailsMap.set(candidateEmail, email);
+            }
+          }
+        });
+        
+        // Convert map to array of email details (only latest emails)
+        emailDetails = Array.from(latestEmailsMap.values()).map(email => ({
           id: email._id.toString(),
           type: email.type,
           from: email.from,
           to: email.to,
+          cc: email.cc || [], // Include CC for evaluation
           subject: email.subject,
           body: email.body,
           attachments: email.attachments || [], // Include attachments for evaluation
-          candidateId: email.candidateId?._id?.toString(),
+          candidateId: email.candidateId?.toString(),
           candidateName: email.candidateName,
           interviewScheduleId: email.interviewScheduleId?.toString(),
           sentAt: email.sentAt,

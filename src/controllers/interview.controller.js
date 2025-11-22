@@ -23,11 +23,8 @@ export const getCandidates = async (req, res) => {
       return res.status(404).json({ message: 'No active simulation session' });
     }
 
-    // Get current task
-    const currentTask = getCurrentTask(session.currentTaskIndex);
-    if (!currentTask || currentTask.id !== 'hr_t3') {
-      return res.status(400).json({ message: 'Current task is not hr_t3' });
-    }
+    // Note: Removed task validation - candidates can be viewed at any time
+    // This allows flexibility for users to access candidate information for any task
 
     // Get candidates from shared resumes (prefer good/excellent quality)
     const { getSharedResumes } = await import('../services/resume.service.js');
@@ -138,8 +135,11 @@ export const getAvailableTimeSlots = async (req, res) => {
 export const createInterviewSchedule = async (req, res) => {
   try {
     const userId = req.user.id;
-    const {
-      candidateId,
+    let {
+      candidateId, // Candidate ID from resume
+      candidateEmail, // Candidate email address (can use instead of candidateId)
+      interviewerEmail, // Interviewer email address
+      interviewerName, // Interviewer name
       resumeId, // Optional: Resume to attach in emails (from shared resumes list)
       startTime,
       endTime,
@@ -147,7 +147,7 @@ export const createInterviewSchedule = async (req, res) => {
       description,
       interviewType,
       location,
-      meetingLink, // REQUIRED for evaluation
+      meetingLink, // Optional: Will be auto-generated if not provided
     } = req.body;
 
     // Find active simulation session
@@ -160,24 +160,51 @@ export const createInterviewSchedule = async (req, res) => {
       return res.status(404).json({ message: 'No active simulation session' });
     }
 
-    // Get current task
-    const currentTask = getCurrentTask(session.currentTaskIndex);
-    if (!currentTask || currentTask.id !== 'hr_t3') {
-      return res.status(400).json({ message: 'Current task is not hr_t3' });
+    // Note: Removed task validation - interviews can be scheduled at any time
+    // This allows flexibility for users to schedule interviews for any task
+
+    // Validate candidate - can use either candidateId or candidateEmail
+    let candidate = null;
+    let candidateName = '';
+    let finalCandidateEmail = '';
+    let finalCandidateId = null;
+    
+    if (candidateId) {
+      candidate = await Resume.findById(candidateId);
+      if (!candidate) {
+        return res.status(404).json({ message: 'Candidate not found' });
+      }
+      finalCandidateId = candidate._id;
+      candidateName = candidate.candidateName;
+      finalCandidateEmail = candidateEmail || candidate.email;
+    } else if (candidateEmail) {
+      finalCandidateEmail = candidateEmail;
+      // Try to find candidate by email
+      candidate = await Resume.findOne({ email: candidateEmail });
+      if (candidate) {
+        finalCandidateId = candidate._id;
+        candidateName = candidate.candidateName;
+      } else {
+        candidateName = candidateEmail.split('@')[0]; // Use email username as fallback
+      }
+    } else {
+      return res.status(400).json({ message: 'Either candidateId or candidateEmail is required' });
     }
 
-    // Validate candidate exists
-    const candidate = await Resume.findById(candidateId);
-    if (!candidate) {
-      return res.status(404).json({ message: 'Candidate not found' });
+    if (!finalCandidateEmail || typeof finalCandidateEmail !== 'string' || finalCandidateEmail.trim().length === 0) {
+      return res.status(400).json({ message: 'Candidate email is required' });
+    }
+
+    if (!interviewerEmail || typeof interviewerEmail !== 'string' || interviewerEmail.trim().length === 0) {
+      return res.status(400).json({ message: 'Interviewer email is required' });
     }
 
     // Validate meeting link is provided (REQUIRED for evaluation)
-    if (!meetingLink || typeof meetingLink !== 'string' || meetingLink.trim().length === 0) {
-      return res.status(400).json({ 
-        message: 'Meeting link is required for interview scheduling. Please provide a valid meeting link (e.g., https://meet.company.com/interview/123456).' 
-      });
-    }
+          // Generate meeting link automatically if not provided
+          if (!meetingLink || typeof meetingLink !== 'string' || meetingLink.trim().length === 0) {
+            meetingLink = `https://meet.company.com/interview/${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+            console.log(`🔗 Generated meeting link: ${meetingLink}`);
+          }
 
     // Validate resume exists if provided (optional, defaults to candidateId)
     let resumeToAttach = candidate; // Default to candidate's resume
@@ -222,19 +249,39 @@ export const createInterviewSchedule = async (req, res) => {
       });
     }
 
+    // Use provided resume or default to candidate's resume
+    if (!resumeId && candidate) {
+      resumeToAttach = candidate;
+    } else if (resumeId) {
+      resumeToAttach = await Resume.findById(resumeId);
+      if (!resumeToAttach) {
+        return res.status(404).json({ message: 'Selected resume not found' });
+      }
+    }
+
+    // Use provided resume or default to candidate's resume
+    if (!resumeId && candidate) {
+      resumeToAttach = candidate;
+    } else if (resumeId) {
+      resumeToAttach = await Resume.findById(resumeId);
+      if (!resumeToAttach) {
+        return res.status(404).json({ message: 'Selected resume not found' });
+      }
+    }
+
     // Create interview schedule
     const interview = await InterviewSchedule.create({
       simulationId: session._id,
       taskId: 'hr_t3',
       userId,
-      candidateId: candidate._id,
-      resumeId: resumeToAttach._id, // Store resume to attach in emails
-      candidateName: candidate.candidateName,
-      candidateEmail: candidate.email,
-      interviewerName: 'Sarah Chen (HR Manager)',
+      candidateId: finalCandidateId,
+      resumeId: resumeToAttach ? resumeToAttach._id : null, // Store resume to attach in emails
+      candidateName: candidateName,
+      candidateEmail: finalCandidateEmail.trim(),
+      interviewerName: interviewerName || 'Sarah Chen (HR Manager)',
       interviewType: interviewType || 'video',
       title: title || 'Interview - Python Developer Position',
-      description: description || `Interview with ${candidate.candidateName} for Python Developer position`,
+      description: description || `Interview with ${candidateName} for Python Developer position`,
       startTime: start,
       endTime: end,
       duration: Math.round((end - start) / (1000 * 60)), // in minutes
@@ -276,15 +323,40 @@ export const sendInterviewEmail = async (req, res) => {
   try {
     const userId = req.user.id;
     const {
-      interviewId,
-      meetingLink, // REQUIRED: Meeting link for the interview
-      resumeId, // REQUIRED: Resume ID to attach in emails (from shared resumes list)
-      candidateEmail, // REQUIRED: Candidate email address to send to
-      interviewerEmail, // REQUIRED: Interviewer email address to send to
-      subject,
-      body,
-      attachResume,
+      interviewId, // Optional: Link to a scheduled interview
+      to, // REQUIRED: Candidate email address
+      cc, // REQUIRED: Interviewer email address (will be CC'd)
+      subject, // REQUIRED: Email subject
+      body, // REQUIRED: Email body
+      resumeId, // Optional: Resume to attach
+      meetingLink, // Optional: Meeting link for tracking
+      attachResume, // Optional: whether to attach resume (defaults to true if resumeId provided)
     } = req.body;
+
+    // Validate required fields
+    if (!to || typeof to !== 'string' || to.trim().length === 0) {
+      return res.status(400).json({ 
+        message: 'Candidate email (to) is required' 
+      });
+    }
+
+    if (!cc || typeof cc !== 'string' || cc.trim().length === 0) {
+      return res.status(400).json({ 
+        message: 'Interviewer email (cc) is required' 
+      });
+    }
+
+    if (!subject || typeof subject !== 'string' || subject.trim().length === 0) {
+      return res.status(400).json({ 
+        message: 'Email subject is required' 
+      });
+    }
+
+    if (!body || typeof body !== 'string' || body.trim().length === 0) {
+      return res.status(400).json({ 
+        message: 'Email body is required' 
+      });
+    }
 
     // Find active simulation session
     const session = await SimulationSession.findOne({
@@ -296,106 +368,60 @@ export const sendInterviewEmail = async (req, res) => {
       return res.status(404).json({ message: 'No active simulation session' });
     }
 
-    // Get interview schedule
-    const interview = await InterviewSchedule.findById(interviewId)
-      .populate('candidateId')
-      .populate('resumeId');
-    
-    if (!interview) {
-      return res.status(404).json({ message: 'Interview schedule not found' });
+    // Note: Removed task validation - emails can be sent at any time during the simulation
+    // This allows flexibility for users to send emails for any task, not just hr_t3
+
+    // Get interview schedule if provided (optional)
+    let interview = null;
+    if (interviewId) {
+      interview = await InterviewSchedule.findById(interviewId)
+        .populate('candidateId')
+        .populate('resumeId');
+      
+      if (!interview) {
+        return res.status(404).json({ message: 'Interview schedule not found' });
+      }
+
+      if (interview.simulationId.toString() !== session._id.toString()) {
+        return res.status(403).json({ message: 'Unauthorized access to interview' });
+      }
     }
 
-    if (interview.simulationId.toString() !== session._id.toString()) {
-      return res.status(403).json({ message: 'Unauthorized access to interview' });
+    // Get candidate name from email or interview
+    let candidateName = to.split('@')[0]; // Default: extract from email
+    if (interview && interview.candidateName) {
+      candidateName = interview.candidateName;
     }
 
-    // Validate only candidateEmail and interviewerEmail (needed to send emails)
-    if (!candidateEmail || typeof candidateEmail !== 'string' || candidateEmail.trim().length === 0) {
-      return res.status(400).json({ 
-        message: 'Candidate email is required. Please provide the candidate email address to send the invitation to.' 
-      });
-    }
-
-    if (!interviewerEmail || (typeof interviewerEmail !== 'string' && typeof interviewerEmail !== 'object')) {
-      return res.status(400).json({ 
-        message: 'Interviewer email is required. Please provide the interviewer email address (e.g., sarah.chen@company.com or {name: "Sarah Chen", email: "sarah.chen@company.com"}).' 
-      });
-    }
-
-    // Handle optional meetingLink - use from interview if not provided (for evaluation purposes)
-    const finalMeetingLink = meetingLink && typeof meetingLink === 'string' && meetingLink.trim().length > 0
-      ? meetingLink.trim()
-      : (interview.meetingLink || null);
-
-    // Handle optional resumeId - use candidate's resume if not provided (for evaluation purposes)
+    // Handle resume attachment if resumeId provided
     let resumeToAttach = null;
-    let resumeText = `Resume for ${interview.candidateName}`;
-    let resumeCandidateName = interview.candidateName;
+    let resumeText = `Resume for ${candidateName}`;
+    let resumeCandidateName = candidateName;
 
     if (resumeId) {
       resumeToAttach = await Resume.findById(resumeId);
       if (resumeToAttach) {
         resumeText = resumeToAttach.resumeText || `Resume for ${resumeToAttach.candidateName}`;
-        resumeCandidateName = resumeToAttach.candidateName || interview.candidateName;
-      }
-    } else {
-      // Fallback to candidate's resume if resumeId not provided
-      resumeToAttach = interview.candidateId;
-      if (resumeToAttach && resumeToAttach.resumeText) {
-        resumeText = resumeToAttach.resumeText;
-        resumeCandidateName = resumeToAttach.candidateName || interview.candidateName;
+        resumeCandidateName = resumeToAttach.candidateName || candidateName;
+        // Update candidate name if found in resume
+        candidateName = resumeToAttach.candidateName || candidateName;
       }
     }
 
-    // Create resume attachment (using selected resume or candidate's resume)
-    // Only attach if resumeId was provided (for evaluation purposes)
-    const candidateResumeAttachment = resumeId ? {
+    // Create resume attachment if resumeId provided
+    const resumeAttachment = resumeId && resumeToAttach ? {
       filename: `${resumeCandidateName}_Resume.txt`,
       url: null,
       size: resumeText.length,
       mimeType: 'text/plain',
     } : null;
 
-    // Candidate email may or may not have resume (based on attachResume flag and resumeId provided)
-    const candidateResumeAttachmentList = (attachResume && candidateResumeAttachment) ? [candidateResumeAttachment] : [];
+    // Attach resume if resumeId provided and attachResume is not explicitly false
+    const shouldAttachResume = resumeId && (attachResume !== false);
+    const attachmentsList = shouldAttachResume && resumeAttachment ? [resumeAttachment] : [];
 
-    // Format email body for candidate with interview details and meeting link
-    const candidateEmailBody = body || `Dear ${interview.candidateName},
-
-We are pleased to invite you for an interview for the Python Developer position.
-
-Interview Details:
-- Type: ${interview.interviewType}
-${finalMeetingLink ? `- Meeting Link: ${finalMeetingLink}` : '- Meeting Link: Not provided'}
-${interview.location ? `- Location: ${interview.location}` : ''}
-
-Please confirm your attendance.
-
-Best regards,
-Sarah Chen
-HR Manager`;
-
-    // Format email body for interviewer
-    const interviewerName = typeof interviewerEmail === 'object' ? interviewerEmail.name : 'Sarah Chen';
-    const interviewerEmailAddress = typeof interviewerEmail === 'object' ? interviewerEmail.email : interviewerEmail.trim();
-    
-    const interviewerEmailBody = `Dear ${interviewerName},
-
-You have an interview scheduled with ${interview.candidateName} for the Python Developer position.
-
-Interview Details:
-- Candidate: ${interview.candidateName} (${candidateEmail.trim()})
-- Type: ${interview.interviewType}
-${finalMeetingLink ? `- Meeting Link: ${finalMeetingLink}` : '- Meeting Link: Not provided'}
-${interview.location ? `- Location: ${interview.location}` : ''}
-
-Please find the candidate's resume attached.
-
-Best regards,
-HR Team`;
-
-    // Create email records for both candidate and interviewer
-    const candidateEmailRecord = await Email.create({
+    // Create email record - to candidate, CC interviewer
+    const emailRecord = await Email.create({
       simulationId: session._id,
       taskId: 'hr_t3',
       userId,
@@ -406,91 +432,50 @@ HR Team`;
         email: 'sarah.chen@company.com',
       },
       to: [{
-        name: interview.candidateName,
-        email: candidateEmail.trim(),
+        name: candidateName,
+        email: to.trim(),
       }],
-      subject: subject || `Interview Invitation - Python Developer Position`,
-      body: candidateEmailBody,
-      bodyHtml: candidateEmailBody.replace(/\n/g, '<br>'),
-      attachments: candidateResumeAttachmentList,
-      candidateId: interview.candidateId,
-      candidateName: interview.candidateName,
-      interviewScheduleId: interview._id,
+      cc: [{
+        name: 'Sarah Chen',
+        email: cc.trim(),
+      }],
+      subject: subject,
+      body: body,
+      bodyHtml: body.replace(/\n/g, '<br>'),
+      attachments: attachmentsList,
+      candidateId: interview?.candidateId?._id || resumeToAttach?._id || null,
+      candidateName: candidateName,
+      interviewScheduleId: interview?._id || null,
       sentAt: new Date(),
     });
 
-    // Create email for interviewer (attach resume if resumeId was provided)
-    const interviewerResumeAttachment = resumeId ? {
-      filename: `${resumeCandidateName}_Resume.txt`,
-      url: null,
-      size: resumeText.length,
-      mimeType: 'text/plain',
-    } : null;
-
-    // Interviewer email should always have resume, but only if resumeId was provided (for evaluation)
-    const interviewerResumeAttachmentList = interviewerResumeAttachment ? [interviewerResumeAttachment] : [];
-
-    const interviewerEmailRecord = await Email.create({
-      simulationId: session._id,
-      taskId: 'hr_t3',
-      userId,
-      type: 'sent',
-      folder: 'sent',
-      from: {
-        name: 'HR Team',
-        email: 'hr@company.com',
-      },
-      to: [{
-        name: interviewerName,
-        email: interviewerEmailAddress,
-      }],
-      subject: `Interview Scheduled - ${interview.candidateName} - Python Developer Position`,
-      body: interviewerEmailBody,
-      bodyHtml: interviewerEmailBody.replace(/\n/g, '<br>'),
-      attachments: interviewerResumeAttachmentList, // Attach resume if resumeId was provided (for evaluation)
-      candidateId: interview.candidateId,
-      candidateName: interview.candidateName,
-      interviewScheduleId: interview._id,
-      sentAt: new Date(),
-    });
-
-    // Update interview with email references and meeting link (if provided)
-    interview.emailSent = true;
-    interview.emailId = candidateEmailRecord._id; // Store candidate email ID
-    if (finalMeetingLink) {
-      interview.meetingLink = finalMeetingLink; // Update meeting link if provided
+    // Update interview if it exists
+    if (interview) {
+      interview.emailSent = true;
+      interview.emailId = emailRecord._id;
+      if (meetingLink) {
+        interview.meetingLink = meetingLink;
+      }
+      await interview.save();
     }
-    await interview.save();
 
     res.status(201).json({
-      emails: [
-        {
-          id: candidateEmailRecord._id.toString(),
-          type: 'candidate',
-          subject: candidateEmailRecord.subject,
-          body: candidateEmailRecord.body,
-          to: candidateEmailRecord.to,
-          sentAt: candidateEmailRecord.sentAt,
-          attachments: candidateEmailRecord.attachments,
-          meetingLink: finalMeetingLink,
-        },
-        {
-          id: interviewerEmailRecord._id.toString(),
-          type: 'interviewer',
-          subject: interviewerEmailRecord.subject,
-          body: interviewerEmailRecord.body,
-          to: interviewerEmailRecord.to,
-          sentAt: interviewerEmailRecord.sentAt,
-          attachments: interviewerEmailRecord.attachments,
-          meetingLink: finalMeetingLink,
-        },
-      ],
-      interview: {
+      email: {
+        id: emailRecord._id.toString(),
+        subject: emailRecord.subject,
+        body: emailRecord.body,
+        to: emailRecord.to,
+        cc: emailRecord.cc,
+        sentAt: emailRecord.sentAt,
+        attachments: emailRecord.attachments,
+        meetingLink: meetingLink || null,
+      },
+      interview: interview ? {
         id: interview._id.toString(),
         emailSent: interview.emailSent,
-        meetingLink: finalMeetingLink,
-      },
-      message: 'Emails sent successfully to candidate and interviewer',
+        meetingLink: interview.meetingLink,
+      } : null,
+      message: 'Email sent successfully to candidate with interviewer in CC',
     });
   } catch (error) {
     console.error('Send interview email error:', error);

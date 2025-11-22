@@ -13,9 +13,14 @@ export async function generatePersonaResponse(message, persona, context = {}) {
     };
   }
 
-  const systemPrompt = getPersonaSystemPrompt(persona, context);
+  let systemPrompt = getPersonaSystemPrompt(persona, context);
   const conversationContext = context.conversationHistory || [];
   const currentTask = context.currentTask || null;
+  
+  // For hr_t3 task assignment, make system prompt more directive
+  if (currentTask && currentTask.id === 'hr_t3' && message && (message.includes('CANDIDATE_EMAIL') || message.includes('schedule an interview'))) {
+    systemPrompt += `\n\nSPECIAL INSTRUCTION FOR HR_T3 TASK ASSIGNMENT:\nWhen assigning this task, you MUST include ALL the interview details provided in the user message (Candidate Email, Candidate Name, Interview Date & Time, Interviewer Email, Interviewer Name). Do not skip or summarize these details. List them clearly in your response. The meeting link will be generated automatically when scheduling, so do not mention it.`;
+  }
 
   try {
     if (provider === 'openai') {
@@ -537,15 +542,16 @@ If the submission contains a JD for a different position, clearly state this in 
     prompt += `\n\n=== CRITICAL EVALUATION FOR HR_T3 (INTERVIEW SCHEDULING) ===
 The task requires scheduling 1 interview with a candidate and sending an email with meeting link and resume.
 
+IMPORTANT: DO NOT VALIDATE OR CHECK INTERVIEW TIMINGS/DATES - Timing is flexible and up to the user.
+
 IMPORTANT EVALUATION CRITERIA (Weighted Scoring):
 
 1. CORRECT INVITATIONS (40% weight - 4 points out of 10):
    - Did the user schedule exactly 1 interview? (Expected: 1)
-   - Was the correct candidate selected for the interview?
-   - Is the calendar invite complete with all necessary details?
-   - Did they send an email to the candidate?
-   - Are interview details (date, time, type, location/meeting link) accurate?
+   - Was the correct candidate email used for scheduling?
+   - Did they send an email to the correct candidate email?
    - Check if email contains proper subject line, greeting, and interview details
+   - NOTE: DO NOT check or validate interview date/time - any time is acceptable
 
 2. EMAIL QUALITY (30% weight - 3 points out of 10):
    - Was the resume attached to the email?
@@ -586,6 +592,7 @@ Email ${index + 1}:
 - Type: ${email.type} (${email.type === 'sent' ? 'Sent' : 'Received'})
 - From: ${email.from.name} (${email.from.email})
 - To: ${email.to.map(t => `${t.name} (${t.email})`).join(', ')}
+- CC: ${email.cc && email.cc.length > 0 ? email.cc.map(c => `${c.name} (${c.email})`).join(', ') : 'NONE - CRITICAL (Interviewer should be CC\'d)'}
 - Subject: ${email.subject}
 - Body: ${email.body.substring(0, 200)}${email.body.length > 200 ? '...' : ''}
 - Candidate: ${email.candidateName || 'N/A'}
@@ -598,24 +605,33 @@ IMPORTANT EVALUATION CRITERIA:
 1. Check if resume is attached to the email (CRITICAL for evaluation)
 2. Check if meeting link is included in email body (CRITICAL for evaluation)
 3. Check if email was sent to the correct candidate
-4. Check if interview was scheduled correctly
+4. Check if interviewer was CC'd in the email (check cc field)
+5. Check if interview was scheduled correctly
 ` : 'No emails found. CRITICAL ERROR - Email should be sent to the candidate.'}
 
 SCORING BREAKDOWN:
 - If no interview scheduled or more than 1 interview: Deduct 2-3 points (Correct Invitations - 40%)
-- If wrong candidate selected: Deduct 2-3 points (Correct Invitations - 40%)
-- If email sent to wrong candidate: Deduct 2-3 points (Correct Invitations - 40%)
+- If wrong candidate email: Deduct 2-3 points (Correct Invitations - 40%)
+- If email sent to wrong candidate email: Deduct 2-3 points (Correct Invitations - 40%)
 - If resume NOT attached to email: Deduct 1-2 points (Email Quality - 30%)
 - If meeting link NOT included in email: Deduct 1-2 points (Email Quality - 30%)
 - If email not sent: Deduct 2-3 points (Email Quality - 30%)
+- If interviewer NOT CC'd in email: Deduct 1-2 points (Email Quality - 30%)
 - If email lacks clarity/professionalism: Deduct 1-2 points (Clarity - 30%)
-- If calendar invite incomplete: Deduct 1-2 points (Clarity - 30%)
+- DO NOT deduct points for interview timing/date - timing is flexible and up to user
 
 SCORING EXAMPLES:
-- 8-10: Interview scheduled correctly, email sent to candidate with resume attachment and meeting link, clear professional communication
-- 6-7: Interview scheduled but minor issues with email (missing resume attachment or meeting link)
-- 4-5: No interview scheduled or major issues with email (no attachments, no links)
-- 0-3: No interview scheduled, no email sent, or critical errors in email
+- 8-10: 1 interview scheduled, email sent to correct candidate with interviewer CC'd, resume and meeting link included (timing doesn't matter)
+- 6-7: Interview scheduled but minor issues (missing resume, meeting link, or CC)
+- 4-5: No interview or major email issues (no attachments, no links, missing CC)
+- 0-3: Critical errors - wrong candidate email, no interview, or no email sent
+
+CRITICAL REMINDER: DO NOT evaluate or penalize for interview date/time differences. Timing is flexible. Focus ONLY on:
+1. Correct candidate email
+2. Interviewer CC'd in email
+3. Resume attached to email
+4. Meeting link included in email
+5. Professional email content
 `;
   }
 
