@@ -138,7 +138,7 @@ export function initializeSocket(io) {
 
         const sessionId = socket.currentSessionId;
 
-        // Verify session and get it
+        // Verify session and get it - REFRESH to get latest task index
         // For demo users, skip userId check since it's not a valid ObjectId
         let session;
         if (socket.userId?.startsWith('demo-user')) {
@@ -158,7 +158,7 @@ export function initializeSocket(io) {
             };
           }
         } else {
-          // For real users, verify ownership
+          // For real users, verify ownership - REFRESH to get latest task index
           session = await SimulationSession.findOne({
             _id: sessionId,
             userId: socket.userId,
@@ -183,6 +183,19 @@ export function initializeSocket(io) {
             return;
           }
         }
+        
+        // IMPORTANT: Refresh session to get latest currentTaskIndex (in case task was just completed)
+        if (session && session._id) {
+          try {
+            const refreshedSession = await SimulationSession.findById(session._id);
+            if (refreshedSession) {
+              session.currentTaskIndex = refreshedSession.currentTaskIndex;
+              console.log('🔄 Refreshed session - currentTaskIndex:', session.currentTaskIndex);
+            }
+          } catch (error) {
+            console.log('⚠️  Could not refresh session, using cached task index');
+          }
+        }
 
         // Get conversation history BEFORE saving user message to check if this is first message
         // For demo users, handle DB errors gracefully
@@ -197,13 +210,103 @@ export function initializeSocket(io) {
           historyBeforeUserMessage = [];
         }
 
-        // Check if this is first-time user's first message (need to generate task brief)
-        // If there are no messages in history at all, this is a first-time user's first message
-        // The welcome message is not saved to DB, so we check if history is empty
-        const aiMessagesBefore = historyBeforeUserMessage.filter(msg => msg.sender === 'manager' || msg.persona === 'Manager');
+        // Get current task first
+        const { getCurrentTask } = await import('../services/task.service.js');
+        const currentTask = getCurrentTask(session?.currentTaskIndex || 0);
+        
+        // Check if task brief is needed for current task
+        // Task brief needed when:
+        // 1. First user message after welcome (for first task)
+        // 2. User acknowledges and we're on a task that hasn't been introduced yet
         const userMessagesBefore = historyBeforeUserMessage.filter(msg => msg.sender === 'user');
-        const isFirstUserMessage = userMessagesBefore.length === 0; // This will be the first user message
-        const needsTaskBrief = isFirstUserMessage && historyBeforeUserMessage.length === 0; // No messages at all (welcome not saved to DB, no task brief yet)
+        const isFirstUserMessage = userMessagesBefore.length === 0;
+        const isFirstTask = (session?.currentTaskIndex === 0 || session?.currentTaskIndex === undefined || session?.currentTaskIndex === null);
+        
+        // Check if task brief already exists for current task
+        const aiMessagesBefore = historyBeforeUserMessage.filter(msg => msg.sender === 'manager' || msg.persona === 'Manager');
+        const hasTaskBrief = currentTask && aiMessagesBefore.some(msg => {
+          if (!msg.text) return false;
+          const text = msg.text.toLowerCase();
+          const taskTitleWords = currentTask.title.toLowerCase().split(' ');
+          return (
+            (text.includes('continue with') && (text.includes('task') || text.includes('next'))) ||
+            (text.includes('next task') && text.includes(taskTitleWords[0])) ||
+            (text.includes('task') && text.includes(taskTitleWords[0]) && (text.includes('continue') || text.includes('next')))
+          );
+        });
+        
+        // Check if user is acknowledging (for all tasks) - be more lenient
+        const userMessageLower = message.toLowerCase();
+        const isAcknowledgment = userMessageLower.includes('thank') || 
+                                 userMessageLower.includes('thanks') ||
+                                 userMessageLower.includes('done') ||
+                                 userMessageLower.includes('complete') ||
+                                 userMessageLower.includes('finished') ||
+                                 userMessageLower.includes('submitted') ||
+                                 userMessageLower.includes('ready');
+        
+        // Check if we recently completed a task (look for task completion messages or submissions)
+        const recentTaskCompletion = aiMessagesBefore.some(msg => 
+          msg.text && (
+            msg.text.toLowerCase().includes('great work') ||
+            msg.text.toLowerCase().includes('well done') ||
+            msg.text.toLowerCase().includes('task completed') ||
+            msg.text.toLowerCase().includes('submission received') ||
+            msg.text.toLowerCase().includes('score') ||
+            msg.text.toLowerCase().includes('feedback')
+          )
+        );
+        
+        // Check if there are task submissions for previous tasks (indicates task was completed)
+        let hasPreviousTaskSubmission = false;
+        let previousTaskTitle = null;
+        if (session?.currentTaskIndex > 0 && session?._id) {
+          try {
+            const TaskSubmission = (await import('../models/TaskSubmission.model.js')).default;
+            const previousTaskIndex = session.currentTaskIndex - 1;
+            const previousTask = getCurrentTask(previousTaskIndex);
+            if (previousTask) {
+              const submissions = await TaskSubmission.find({
+                simulationId: session._id,
+                taskId: previousTask.id,
+              }).limit(1);
+              hasPreviousTaskSubmission = submissions.length > 0;
+              previousTaskTitle = previousTask.title;
+            }
+          } catch (error) {
+            console.log('⚠️  Could not check task submissions');
+          }
+        }
+        
+        // Also check if current task index > 0 and we haven't introduced this task yet
+        // This catches the case where task was just completed and we moved to next task
+        const isNewTaskWithoutBrief = !isFirstTask && currentTask && !hasTaskBrief;
+        
+        // Task brief needed if:
+        // 1. First user message on first task (after welcome) AND no task brief yet
+        // 2. OR we're on a new task (not first) AND no task brief yet AND (user acknowledges OR previous task has submission)
+        // This ensures we generate brief for task 2, 3, 4 when user sends any message after completing previous task
+        const needsTaskBrief = currentTask && !hasTaskBrief && (
+          (isFirstUserMessage && isFirstTask) ||
+          (isNewTaskWithoutBrief && (isAcknowledgment || hasPreviousTaskSubmission || userMessagesBefore.length > 0))
+        );
+        
+        console.log('🔍 Task brief check (dynamic for all tasks):', {
+          isFirstUserMessage,
+          isFirstTask,
+          isAcknowledgment,
+          isNewTaskWithoutBrief,
+          currentTaskIndex: session?.currentTaskIndex,
+          currentTaskId: currentTask?.id,
+          currentTaskTitle: currentTask?.title,
+          hasCurrentTask: !!currentTask,
+          hasTaskBrief,
+          recentTaskCompletion,
+          hasPreviousTaskSubmission,
+          previousTaskTitle,
+          needsTaskBrief,
+          messagePreview: message.substring(0, 30)
+        });
 
         // Save user message (skip DB save for demo users if DB not available)
         let userMessage;
@@ -249,18 +352,26 @@ export function initializeSocket(io) {
           history = [];
         }
 
-        // Get current task for context (session already retrieved above)
-        const { getCurrentTask } = await import('../services/task.service.js');
-        const currentTask = getCurrentTask(session?.currentTaskIndex || 0);
+        // Current task already retrieved above, use it here
 
-        // If this is first-time user's first message, generate task brief first
+        // Flag to track if we sent task brief (to prevent additional AI response)
+        let taskBriefSent = false;
+
+        // If task brief is needed, generate it dynamically with AI (but concise and direct)
         if (needsTaskBrief && currentTask) {
-          console.log('👋 First-time user detected - generating task brief...');
+          console.log('🚨🚨🚨 ENTERING TASK BRIEF BLOCK - GENERATING CONCISE AI TASK BRIEF 🚨🚨🚨');
+          console.log('👋 Task brief needed - generating concise AI task brief...');
+          console.log('📋 Task details:', {
+            title: currentTask.title,
+            description: currentTask.description,
+            expectedOutput: currentTask.expectedOutput,
+            taskIndex: session?.currentTaskIndex || 0
+          });
           
-          const { generatePersonaResponse } = await import('../services/ai.orchestrator.js');
-          const { generateHRScenarioPrompt } = await import('../controllers/simulation.controller.js');
+          // Generate concise, direct task brief using AI with strict system prompt
+          const { aiClient, provider } = await import('../config/ai.config.js');
           
-          // Get user name for prompt
+          // Get user name for personalization
           let userName = 'there';
           try {
             const User = (await import('../models/User.model.js')).default;
@@ -272,6 +383,11 @@ export function initializeSocket(io) {
             console.log('⚠️  Could not fetch user name, using default');
           }
           
+          // Create concise task brief prompt - direct assignment, no questions
+          const taskNumber = (session?.currentTaskIndex || 0) + 1;
+          const taskTitle = currentTask.title;
+          const taskDescription = currentTask.description;
+          const taskOutput = currentTask.expectedOutput;
           // Create a realistic HR scenario prompt based on the task
           let taskBriefContent = '';
           
@@ -361,30 +477,133 @@ Please schedule this interview and send the email. Let me know once you've compl
             }
           }
           
-          // Generate task brief
-          let taskBrief;
-          if (taskBriefContent) {
-            // Use hardcoded message for hr_t3
-            taskBrief = taskBriefContent;
+          // Different prompt for first task vs subsequent tasks - be very explicit
+          let taskBriefPrompt;
+          if (isFirstTask) {
+            taskBriefPrompt = `${userName} just thanked you after the welcome message. 
+
+You need to assign them their first task. 
+
+TASK DETAILS:
+- Task Title: "${taskTitle}"
+- Task Description: "${taskDescription}"
+- Expected Output: "${taskOutput}"
+
+Respond with exactly this format (2-3 sentences):
+1. "Thank you!"
+2. "Please continue with your first task: ${taskTitle}."
+3. "${taskDescription} The expected output is: ${taskOutput}."
+
+DO NOT ask any questions. Just assign the task directly.`;
           } else {
-            // Generate AI message for other tasks
-            let scenarioPrompt = generateHRScenarioPrompt(currentTask, session?.role || 'HR Executive', userName);
-            try {
-              const aiResponse = await generatePersonaResponse(
-                scenarioPrompt,
-                'Manager',
-                {
-                  conversationHistory: [],
-                  currentTask: currentTask,
-                  simulationRole: session?.role,
-                }
-              );
-              taskBrief = aiResponse.reply || `Great! Let me brief you on your first task: ${currentTask.title}. ${currentTask.description}. Let's get started!`;
-            } catch (error) {
-              console.error('Error generating task brief:', error);
-              taskBrief = `Great! Let me brief you on your first task: ${currentTask.title}. ${currentTask.description}. Let's get started!`;
-            }
+            // For subsequent tasks, acknowledge previous task completion
+            const { getTaskByIndex } = await import('../services/task.service.js');
+            const previousTaskIndex = (session?.currentTaskIndex || 1) - 1;
+            const previousTask = getTaskByIndex(previousTaskIndex);
+            const prevTaskTitle = previousTask?.title || previousTaskTitle || 'the previous task';
+            
+            taskBriefPrompt = `${userName} just sent a message: "${message}". They just completed: "${prevTaskTitle}".
+
+You need to:
+1. Acknowledge their completion (be brief, 1 sentence): "Nice! You completed ${prevTaskTitle}." or "Great work on completing ${prevTaskTitle}!"
+2. Assign them their next task (Task ${taskNumber}): "Please continue with your next task: ${taskTitle}."
+3. Explain what's needed: "${taskDescription} The expected output is: ${taskOutput}."
+
+Your response must be exactly 2-3 sentences total. Format:
+"[Acknowledge completion]. [Assign next task]. [Explain what's needed]."
+
+DO NOT ask any questions. DO NOT ask "how do you", "what do you", "have you considered", or any questions. Just acknowledge and assign directly.`;
           }
+          
+          // STRICT system prompt that prevents questions
+          const strictSystemPrompt = `You are Sarah Chen, HR Manager. Your ONLY job right now is to assign a task directly.
+
+ABSOLUTE RULES - NO EXCEPTIONS:
+1. You MUST respond in exactly 2-3 sentences
+2. You MUST directly assign the task - NO QUESTIONS
+3. You MUST follow the exact format provided in the user's message
+4. You MUST NOT ask "how do you envision", "what do you think", "have you considered", "what specific", or ANY questions
+5. You MUST NOT ask about their approach, thoughts, or considerations
+6. You MUST acknowledge, assign task, and explain expected output
+7. NO QUESTION MARKS (?) ALLOWED IN YOUR RESPONSE
+
+Your response should be: Acknowledge → Assign task → Explain what's needed. That's it. NO QUESTIONS.`;
+          
+          console.log('✅ Generating AI task brief with STRICT system prompt (no questions)...');
+          let taskBrief;
+          try {
+            if (aiClient && provider === 'openai') {
+              const response = await aiClient.chat.completions.create({
+                model: 'gpt-4-turbo-preview',
+                messages: [
+                  { role: 'system', content: strictSystemPrompt },
+                  { role: 'user', content: taskBriefPrompt }
+                ],
+                temperature: 0.3, // Lower temperature for more direct responses
+                max_tokens: 150, // Limit to keep it concise
+                presence_penalty: 0, // No penalty to avoid questions
+                frequency_penalty: 0,
+              });
+              taskBrief = response.choices[0].message.content.trim();
+              
+              // Post-process to ensure no questions - comprehensive check
+              const lowerBrief = taskBrief.toLowerCase();
+              const hasQuestion = taskBrief.includes('?') || 
+                                 lowerBrief.includes('how do you') || 
+                                 lowerBrief.includes('what do you') || 
+                                 lowerBrief.includes('have you considered') ||
+                                 lowerBrief.includes('what specific') ||
+                                 lowerBrief.includes('how would you') ||
+                                 lowerBrief.includes('what are your') ||
+                                 lowerBrief.includes('can you tell me');
+              
+              if (hasQuestion) {
+                console.log('⚠️ AI generated a question, using fallback. Generated:', taskBrief);
+                taskBrief = `Thank you! Please continue with your ${isFirstTask ? 'first' : 'next'} task: ${taskTitle}. ${taskDescription}. The expected output is: ${taskOutput}.`;
+              }
+            } else if (aiClient && provider === 'anthropic') {
+              const response = await aiClient.messages.create({
+                model: 'claude-3-opus-20240229',
+                max_tokens: 150,
+                system: strictSystemPrompt,
+                messages: [
+                  { role: 'user', content: taskBriefPrompt }
+                ],
+              });
+              taskBrief = response.content[0].text.trim();
+              
+              // Post-process to ensure no questions - comprehensive check
+              const lowerBrief = taskBrief.toLowerCase();
+              const hasQuestion = taskBrief.includes('?') || 
+                                 lowerBrief.includes('how do you') || 
+                                 lowerBrief.includes('what do you') || 
+                                 lowerBrief.includes('have you considered') ||
+                                 lowerBrief.includes('what specific') ||
+                                 lowerBrief.includes('how would you') ||
+                                 lowerBrief.includes('what are your') ||
+                                 lowerBrief.includes('can you tell me');
+              
+              if (hasQuestion) {
+                console.log('⚠️ AI generated a question, using fallback. Generated:', taskBrief);
+                taskBrief = `Thank you! Please continue with your ${isFirstTask ? 'first' : 'next'} task: ${taskTitle}. ${taskDescription}. The expected output is: ${taskOutput}.`;
+              }
+            } else {
+              // Fallback if no AI client
+              taskBrief = `Thank you! Please continue with your ${isFirstTask ? 'first' : 'next'} task: ${taskTitle}. ${taskDescription}. The expected output is: ${taskOutput}.`;
+            }
+          } catch (error) {
+            console.error('Error generating task brief:', error);
+            // Fallback to direct message
+            taskBrief = `Thank you! Please continue with your ${isFirstTask ? 'first' : 'next'} task: ${taskTitle}. ${taskDescription}. The expected output is: ${taskOutput}.`;
+          }
+          
+          // Use hardcoded message if available (for hr_t3)
+          if (taskBriefContent) {
+            taskBrief = taskBriefContent;
+          }
+          
+          console.log('✅ Generated AI task brief:', taskBrief);
+          taskBriefSent = true;
 
           // Save task brief message
           let taskBriefMessage;
@@ -445,10 +664,69 @@ Please schedule this interview and send the email. Let me know once you've compl
           history.push(taskBriefMessage);
           // Re-sort history by creation time
           history.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+          
+          // If we just sent the task brief, that's the response to "thank you" - don't generate additional AI response
+          // The task brief already explains the first task, so we can return here
+          console.log('✅ Task brief sent - this is the response to user\'s first message');
+          
+          // Emit typing indicator off
+          io.to(sessionId).emit('persona_typing', {
+            persona: 'Manager',
+            isTyping: false,
+          });
+          
+          // Exit early - task brief is the complete response
+          console.log('🚨🚨🚨 RETURNING EARLY - NO AI RESPONSE WILL BE GENERATED 🚨🚨🚨');
+          console.log('✅ Task brief sent successfully, exiting early to prevent AI response');
+          return; // CRITICAL: This return prevents any AI response generation
+        } else {
+          console.log('⚠️ Task brief NOT needed. Reasons:', {
+            needsTaskBrief,
+            hasCurrentTask: !!currentTask,
+            isFirstUserMessage,
+            currentTaskIndex: session?.currentTaskIndex,
+            hasTaskBrief
+          });
+        }
+
+        // CRITICAL SAFETY CHECK: if task brief was sent, don't generate AI response
+        if (taskBriefSent) {
+          console.log('🛑🛑🛑 SAFETY CHECK: Task brief was sent, preventing additional AI response 🛑🛑🛑');
+          console.log('🛑 EXITING COMPLETELY - NO AI RESPONSE');
+          return;
+        }
+
+        // Double check: if we're on first task and first user message, we should have sent task brief
+        // If we reach here, something went wrong with the detection
+        if (isFirstUserMessage && isFirstTask && currentTask && !hasTaskBrief) {
+          console.log('🚨🚨🚨 ERROR: Should have sent task brief but didn\'t! Preventing AI response to avoid duplicate.');
+          console.log('🚨 EXITING - Task brief should have been sent');
+          return;
+        }
+
+        // FINAL CHECK: If we sent task brief in this request, absolutely do not generate AI response
+        // This is a redundant check to be absolutely sure
+        const recentTaskBrief = history.some(msg => 
+          msg.sender === 'manager' && 
+          msg.text && 
+          msg.text.includes('continue with your first task')
+        );
+        if (recentTaskBrief && isFirstUserMessage) {
+          console.log('🛑🛑🛑 FINAL CHECK: Found task brief in history, preventing AI response 🛑🛑🛑');
+          return;
         }
 
         // Determine persona (default to Manager if not specified)
         const currentPersona = persona || 'Manager';
+        
+        // ABSOLUTE FINAL CHECK before generating AI response
+        if (taskBriefSent || (isFirstUserMessage && isFirstTask && currentTask)) {
+          console.log('🛑🛑🛑 ABSOLUTE FINAL CHECK FAILED - NOT GENERATING AI RESPONSE 🛑🛑🛑');
+          console.log('🛑 taskBriefSent:', taskBriefSent, 'isFirstUserMessage:', isFirstUserMessage, 'isFirstTask:', isFirstTask);
+          return;
+        }
+        
+        console.log('⚠️⚠️⚠️ CONTINUING TO AI RESPONSE GENERATION (task brief was NOT sent) ⚠️⚠️⚠️');
 
         // Emit typing indicator
         io.to(sessionId).emit('persona_typing', {

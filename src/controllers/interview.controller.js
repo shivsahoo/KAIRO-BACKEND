@@ -138,6 +138,7 @@ export const createInterviewSchedule = async (req, res) => {
     let {
       candidateId, // Candidate ID from resume
       candidateEmail, // Candidate email address (can use instead of candidateId)
+      candidateName, // Candidate name (required when using candidateEmail)
       interviewerEmail, // Interviewer email address
       interviewerName, // Interviewer name
       resumeId, // Optional: Resume to attach in emails (from shared resumes list)
@@ -165,7 +166,7 @@ export const createInterviewSchedule = async (req, res) => {
 
     // Validate candidate - can use either candidateId or candidateEmail
     let candidate = null;
-    let candidateName = '';
+    let finalCandidateName = '';
     let finalCandidateEmail = '';
     let finalCandidateId = null;
     
@@ -175,7 +176,7 @@ export const createInterviewSchedule = async (req, res) => {
         return res.status(404).json({ message: 'Candidate not found' });
       }
       finalCandidateId = candidate._id;
-      candidateName = candidate.candidateName;
+      finalCandidateName = candidate.candidateName;
       finalCandidateEmail = candidateEmail || candidate.email;
     } else if (candidateEmail) {
       finalCandidateEmail = candidateEmail;
@@ -183,9 +184,25 @@ export const createInterviewSchedule = async (req, res) => {
       candidate = await Resume.findOne({ email: candidateEmail });
       if (candidate) {
         finalCandidateId = candidate._id;
-        candidateName = candidate.candidateName;
+        finalCandidateName = candidate.candidateName;
       } else {
-        candidateName = candidateEmail.split('@')[0]; // Use email username as fallback
+        // If candidate doesn't exist, create a temporary Resume record
+        // Use candidateName from request body if provided, otherwise use email username
+        const tempCandidateName = candidateName || candidateEmail.split('@')[0];
+        candidate = await Resume.create({
+          candidateName: tempCandidateName,
+          email: candidateEmail,
+          phone: '',
+          experience: 0,
+          skills: [],
+          education: '',
+          summary: `Candidate: ${tempCandidateName}`,
+          resumeText: `Resume for ${tempCandidateName}`,
+          quality: 'good',
+          relevance: 5,
+        });
+        finalCandidateId = candidate._id;
+        finalCandidateName = candidate.candidateName;
       }
     } else {
       return res.status(400).json({ message: 'Either candidateId or candidateEmail is required' });
@@ -276,12 +293,12 @@ export const createInterviewSchedule = async (req, res) => {
       userId,
       candidateId: finalCandidateId,
       resumeId: resumeToAttach ? resumeToAttach._id : null, // Store resume to attach in emails
-      candidateName: candidateName,
+      candidateName: finalCandidateName,
       candidateEmail: finalCandidateEmail.trim(),
       interviewerName: interviewerName || 'Sarah Chen (HR Manager)',
       interviewType: interviewType || 'video',
       title: title || 'Interview - Python Developer Position',
-      description: description || `Interview with ${candidateName} for Python Developer position`,
+      description: description || `Interview with ${finalCandidateName} for Python Developer position`,
       startTime: start,
       endTime: end,
       duration: Math.round((end - start) / (1000 * 60)), // in minutes
