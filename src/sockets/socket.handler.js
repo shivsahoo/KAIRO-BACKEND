@@ -70,6 +70,8 @@ async function authenticateSocket(socket, next) {
   }
 }
 
+import { processAudioBuffer } from '../services/mock-interview.service.js';
+
 /**
  * Initialize Socket.io
  */
@@ -79,6 +81,56 @@ export function initializeSocket(io) {
 
   io.on('connection', (socket) => {
     console.log(`✅ Client connected: ${socket.userId}`);
+    
+    // Audio Buffer for Streaming
+    socket.audioBuffer = []; 
+
+    // ... existing handlers ...
+
+    // --- MOCK INTERVIEW STREAMING HANDLERS ---
+
+    socket.on('mock_audio_start', ({ roomName }) => {
+      console.log(`🎙️ [Socket] Audio stream started for ${roomName}`);
+      socket.audioBuffer = []; // Reset buffer
+    });
+
+    socket.on('mock_audio_chunk', (chunk) => {
+      if (chunk && socket.audioBuffer) {
+        // Append chunk to buffer
+        socket.audioBuffer.push(Buffer.from(chunk));
+      }
+    });
+
+    socket.on('mock_audio_end', async ({ roomName }) => {
+      console.log(`🛑 [Socket] Audio stream ended for ${roomName}, processing...`);
+      
+      if (!socket.audioBuffer || socket.audioBuffer.length === 0) {
+        return;
+      }
+
+      try {
+        // Combine chunks
+        const fullBuffer = Buffer.concat(socket.audioBuffer);
+        socket.audioBuffer = []; // Clear
+
+        // Process via Service (Whisper -> GPT -> TTS)
+        const result = await processAudioBuffer(roomName, fullBuffer);
+        
+        // Emit back response
+        socket.emit('mock_audio_response', {
+           transcript: result.transcript,
+           response: result.response,
+           audioId: result.audioId,
+           audioUrl: `/api/mock-interview/interview/${roomName}/audio/${result.audioId}` // Helper URL
+        });
+
+      } catch (err) {
+        console.error('❌ [Socket] Audio processing failed:', err);
+        socket.emit('mock_audio_error', { message: 'Failed to process audio stream' });
+      }
+    });
+    
+    // ... existing handlers ...
 
     // Join user's simulation room
     socket.on('join_simulation', async (sessionId) => {

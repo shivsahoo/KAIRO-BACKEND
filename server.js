@@ -10,6 +10,7 @@ import taskRoutes from './src/routes/task.routes.js';
 import uploadRoutes from './src/routes/upload.routes.js';
 import audioRoutes from './src/routes/audio.routes.js';
 import interviewRoutes from './src/routes/interview.routes.js';
+import mockInterviewRoutes from './src/routes/mock-interview.routes.js';
 import { initializeSocket } from './src/sockets/socket.handler.js';
 import { setSocketInstance } from './src/utils/socket.instance.js';
 import { initializeSharedResumes } from './src/services/resume.service.js';
@@ -57,6 +58,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/audio', audioRoutes);
 app.use('/api/interviews', interviewRoutes);
+app.use('/api/mock-interview', mockInterviewRoutes); // Mock HR Interview routes
 
 // Health check
 app.get('/api/health', (req, res) => {
