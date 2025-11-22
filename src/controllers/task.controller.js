@@ -328,6 +328,14 @@ export const submitTask = async (req, res) => {
       }
     }
 
+    // Add transcript for hr_t4
+    if (currentTask.id === 'hr_t4') {
+      if (req.body.transcriptId) {
+        submissionData.transcriptId = req.body.transcriptId;
+      }
+      // Transcript text is already in submissionData.text
+    }
+
     const submission = await TaskSubmission.create(submissionData);
 
     // Get task details for evaluation
@@ -406,6 +414,50 @@ This is an excellent opportunity for a Python developer to work on challenging p
       }
     }
 
+    // For hr_t4, get transcript details for evaluation
+    let transcriptDetails = null;
+    
+    if (currentTask.id === 'hr_t4') {
+      const InterviewTranscript = (await import('../models/InterviewTranscript.model.js')).default;
+      
+      // Try to find transcript by sessionId or get latest transcript for user
+      if (submission.transcriptId) {
+        const transcript = await InterviewTranscript.findOne({
+          _id: submission.transcriptId,
+          userId: session.userId,
+        });
+        
+        if (transcript) {
+          transcriptDetails = {
+            id: transcript._id.toString(),
+            sessionId: transcript.sessionId,
+            startTime: transcript.startTime,
+            endTime: transcript.endTime,
+            duration: transcript.duration,
+            messageCount: transcript.transcript.length,
+            transcript: transcript.transcript,
+          };
+        }
+      } else {
+        // Get latest transcript for user if no ID provided
+        const latestTranscript = await InterviewTranscript.findOne({
+          userId: session.userId,
+        }).sort({ createdAt: -1 });
+        
+        if (latestTranscript) {
+          transcriptDetails = {
+            id: latestTranscript._id.toString(),
+            sessionId: latestTranscript.sessionId,
+            startTime: latestTranscript.startTime,
+            endTime: latestTranscript.endTime,
+            duration: latestTranscript.duration,
+            messageCount: latestTranscript.transcript.length,
+            transcript: latestTranscript.transcript,
+          };
+        }
+      }
+    }
+
     // For hr_t3, get interview schedules and emails for evaluation
     let interviewDetails = null;
     let emailDetails = null;
@@ -477,7 +529,7 @@ This is an excellent opportunity for a Python developer to work on challenging p
     }
 
     // Evaluate submission using AI
-    const evaluation = await evaluateTask(currentTask.id, submission, taskDetails, resumeDetails, jobDescription, interviewDetails, emailDetails);
+    const evaluation = await evaluateTask(currentTask.id, submission, taskDetails, resumeDetails, jobDescription, interviewDetails, emailDetails, transcriptDetails);
 
     // Update submission with evaluation
     submission.score = evaluation.score;

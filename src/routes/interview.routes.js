@@ -14,6 +14,10 @@ router.get('/interviews', interviewController.getInterviews);
 router.post('/schedule', interviewController.createInterviewSchedule);
 router.post('/send-email', interviewController.sendInterviewEmail);
 router.get('/inbox', interviewController.getInbox);
+// Transcript routes
+router.post('/transcript', interviewController.saveTranscript);
+router.get('/transcripts', interviewController.getTranscripts);
+router.get('/transcript/:id', interviewController.getTranscript);
 // Candidate confirmation response removed - no conflicts needed
 
 export default router;

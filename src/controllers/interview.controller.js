@@ -2,6 +2,7 @@ import SimulationSession from '../models/SimulationSession.model.js';
 import InterviewSchedule from '../models/InterviewSchedule.model.js';
 import Email from '../models/Email.model.js';
 import Resume from '../models/Resume.model.js';
+import InterviewTranscript from '../models/InterviewTranscript.model.js';
 import { getCurrentTask } from '../services/task.service.js';
 import { generatePersonaResponse } from '../services/ai.orchestrator.js';
 import { getSocketInstance } from '../utils/socket.instance.js';
@@ -602,6 +603,134 @@ export const getInterviews = async (req, res) => {
     });
   } catch (error) {
     console.error('Get interviews error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+/**
+ * Save interview transcript
+ */
+export const saveTranscript = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const {
+      sessionId,
+      roomName,
+      agentName,
+      startTime,
+      endTime,
+      duration,
+      transcript,
+    } = req.body;
+
+    if (!sessionId || !transcript || !Array.isArray(transcript)) {
+      return res.status(400).json({ 
+        message: 'sessionId and transcript array are required' 
+      });
+    }
+
+    // Create transcript record
+    const transcriptRecord = await InterviewTranscript.create({
+      userId,
+      sessionId,
+      roomName: roomName || sessionId,
+      agentName: agentName || 'Drew_2a0',
+      startTime: new Date(startTime),
+      endTime: new Date(endTime),
+      duration: duration || (endTime - startTime),
+      transcript: transcript,
+    });
+
+    res.status(201).json({
+      transcript: {
+        id: transcriptRecord._id.toString(),
+        sessionId: transcriptRecord.sessionId,
+        startTime: transcriptRecord.startTime,
+        endTime: transcriptRecord.endTime,
+        duration: transcriptRecord.duration,
+        messageCount: transcriptRecord.transcript.length,
+        evaluated: transcriptRecord.evaluated,
+      },
+      message: 'Transcript saved successfully',
+    });
+  } catch (error) {
+    console.error('Save transcript error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+/**
+ * Get interview transcripts
+ */
+export const getTranscripts = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { sessionId } = req.query;
+
+    const query = { userId };
+    if (sessionId) {
+      query.sessionId = sessionId;
+    }
+
+    const transcripts = await InterviewTranscript.find(query)
+      .sort({ createdAt: -1 })
+      .select('-transcript'); // Exclude full transcript for list view
+
+    res.json({
+      transcripts: transcripts.map(t => ({
+        id: t._id.toString(),
+        sessionId: t.sessionId,
+        roomName: t.roomName,
+        agentName: t.agentName,
+        startTime: t.startTime,
+        endTime: t.endTime,
+        duration: t.duration,
+        messageCount: t.transcript.length,
+        evaluated: t.evaluated,
+        createdAt: t.createdAt,
+      })),
+      count: transcripts.length,
+    });
+  } catch (error) {
+    console.error('Get transcripts error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+/**
+ * Get single transcript by ID
+ */
+export const getTranscript = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const transcript = await InterviewTranscript.findOne({
+      _id: id,
+      userId,
+    });
+
+    if (!transcript) {
+      return res.status(404).json({ message: 'Transcript not found' });
+    }
+
+    res.json({
+      transcript: {
+        id: transcript._id.toString(),
+        sessionId: transcript.sessionId,
+        roomName: transcript.roomName,
+        agentName: transcript.agentName,
+        startTime: transcript.startTime,
+        endTime: transcript.endTime,
+        duration: transcript.duration,
+        transcript: transcript.transcript,
+        evaluated: transcript.evaluated,
+        evaluation: transcript.evaluation,
+        createdAt: transcript.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('Get transcript error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

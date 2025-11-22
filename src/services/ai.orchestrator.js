@@ -312,7 +312,7 @@ function shouldGenerateQuestion(conversationHistory, lastReply) {
 /**
  * Evaluate task submission using AI
  */
-export async function evaluateTask(taskId, submission, taskDetails, resumeDetails = null, jobDescription = null, interviewDetails = null, emailDetails = null) {
+export async function evaluateTask(taskId, submission, taskDetails, resumeDetails = null, jobDescription = null, interviewDetails = null, emailDetails = null, transcriptDetails = null) {
   if (!aiClient) {
     return generateMockEvaluation(taskId, submission);
   }
@@ -464,7 +464,7 @@ Remember: You're Sarah, a real HR Manager talking to a colleague. Be natural, re
 /**
  * Create evaluation prompt
  */
-function createEvaluationPrompt(taskDetails, submission, fileContents = '', resumeDetails = null, jobDescription = null, interviewDetails = null, emailDetails = null) {
+function createEvaluationPrompt(taskDetails, submission, fileContents = '', resumeDetails = null, jobDescription = null, interviewDetails = null, emailDetails = null, transcriptDetails = null) {
   let prompt = `Evaluate the following task submission:
 
 Task: ${taskDetails.title}
@@ -632,6 +632,74 @@ CRITICAL REMINDER: DO NOT evaluate or penalize for interview date/time differenc
 3. Resume attached to email
 4. Meeting link included in email
 5. Professional email content
+`;
+  }
+
+  // Add specific evaluation for hr_t4 (Mock HR Call)
+  if (taskDetails.id === 'hr_t4') {
+    prompt += `\n\n=== CRITICAL EVALUATION FOR HR_T4 (MOCK HR SCREENING CALL) ===
+The task requires conducting a realistic HR screening call with a candidate and providing a call transcript with questions, candidate responses, and evaluation notes.
+
+IMPORTANT EVALUATION CRITERIA (Weighted Scoring):
+
+1. TRANSCRIPT COMPLETENESS (40% weight - 4 points out of 10):
+   - Does the transcript contain both interviewer questions AND candidate responses?
+   - Is the conversation substantial (at least 5-10 exchanges)?
+   - Are questions relevant to HR screening (technical skills, experience, cultural fit)?
+   - Is the transcript well-formatted and readable?
+
+2. INTERVIEW QUALITY (30% weight - 3 points out of 10):
+   - Are the questions appropriate for a Software Developer screening call?
+   - Do questions cover key areas: technical background, experience, communication skills, cultural fit?
+   - Is the interviewer professional and structured in their approach?
+   - Are follow-up questions asked when appropriate?
+
+3. EVALUATION NOTES (30% weight - 3 points out of 10):
+   - Does the submission include evaluation notes or assessment?
+   - Are candidate strengths and weaknesses identified?
+   - Is there a recommendation or suitability assessment?
+   - Are observations specific and actionable?
+
+EVALUATION DATA PROVIDED:
+${transcriptDetails ? `
+=== INTERVIEW TRANSCRIPT ===
+Session ID: ${transcriptDetails.sessionId}
+Duration: ${Math.round(transcriptDetails.duration / 1000 / 60)} minutes
+Total Messages: ${transcriptDetails.messageCount}
+Start Time: ${new Date(transcriptDetails.startTime).toLocaleString()}
+End Time: ${new Date(transcriptDetails.endTime).toLocaleString()}
+
+Transcript Entries:
+${transcriptDetails.transcript.slice(0, 20).map((entry, index) => `
+Entry ${index + 1}:
+- Speaker: ${entry.speaker === 'user' ? 'Interviewer (User)' : 'Candidate (AI)'}
+- Time: ${new Date(entry.timestamp).toLocaleTimeString()}
+- Message: ${entry.message.substring(0, 200)}${entry.message.length > 200 ? '...' : ''}
+`).join('\n')}
+${transcriptDetails.transcript.length > 20 ? `\n... and ${transcriptDetails.transcript.length - 20} more entries` : ''}
+` : 'No transcript data found. Transcript should be included in submission text.'}
+
+=== SUBMISSION TEXT ===
+${submission.text || 'No text provided'}
+
+SCORING BREAKDOWN:
+- If transcript is missing or very short (< 3 exchanges): Deduct 3-4 points (Transcript Completeness - 40%)
+- If transcript only has questions or only responses (not both): Deduct 2-3 points (Transcript Completeness - 40%)
+- If questions are not relevant to HR screening: Deduct 1-2 points (Interview Quality - 30%)
+- If no evaluation notes/assessment provided: Deduct 2-3 points (Evaluation Notes - 30%)
+- If evaluation notes are vague or generic: Deduct 1-2 points (Evaluation Notes - 30%)
+
+SCORING EXAMPLES:
+- 8-10: Complete transcript with both questions and responses, relevant HR screening questions, detailed evaluation notes
+- 6-7: Good transcript but missing evaluation notes, or evaluation notes are brief
+- 4-5: Incomplete transcript (only questions or only responses), or very short conversation
+- 0-3: No transcript provided, or transcript is completely irrelevant to HR screening
+
+CRITICAL REMINDER: The task specifically requires:
+1. A call transcript (both questions AND responses)
+2. Evaluation notes or assessment
+3. Questions appropriate for Software Developer screening
+4. Professional HR screening approach
 `;
   }
 
