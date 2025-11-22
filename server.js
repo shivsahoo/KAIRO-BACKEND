@@ -10,6 +10,7 @@ import taskRoutes from './src/routes/task.routes.js';
 import uploadRoutes from './src/routes/upload.routes.js';
 import audioRoutes from './src/routes/audio.routes.js';
 import interviewRoutes from './src/routes/interview.routes.js';
+import livekitRoutes from './src/routes/livekit.routes.js';
 import { initializeSocket } from './src/sockets/socket.handler.js';
 import { setSocketInstance } from './src/utils/socket.instance.js';
 import { initializeSharedResumes } from './src/services/resume.service.js';
@@ -21,7 +22,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: true, // Allow all origins
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -39,11 +40,20 @@ mongoose.connection.once('connected', async () => {
   }
 });
 
-// Middleware
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+// Middleware - CORS (Allow all origins)
+const corsOptions = {
+  origin: true, // Allow all origins
   credentials: true,
-}));
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+};
+
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -57,6 +67,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/audio', audioRoutes);
 app.use('/api/interviews', interviewRoutes);
+app.use('/api/livekit', livekitRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
