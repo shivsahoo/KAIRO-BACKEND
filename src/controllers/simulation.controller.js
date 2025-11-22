@@ -53,15 +53,21 @@ IMPORTANT: The meeting link will be generated automatically when you schedule th
 
 Write this as a professional, clear task assignment. Include ALL the details listed above in your response.`,
     
-    'hr_t4': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. The company needs a comprehensive Remote Work Policy document. 
+    'hr_t4': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. We need to screen candidates for our Software Developer position, and I'd like you to conduct a mock HR screening call.
 
 Create a realistic scenario where:
-1. Explain why this policy is needed now (company growth, compliance, etc.)
-2. Describe what stakeholders need to be considered
-3. Explain the scope and requirements
-4. Ask them how they would approach creating this policy
+1. Explain the importance of phone screening in the recruitment process
+2. Mention that you've set up an AI-powered candidate simulation for practice
+3. Provide context about the Software Developer role requirements
+4. Instruct them to conduct a 10-15 minute screening call
+5. Ask them to evaluate the candidate's communication, technical background, and cultural fit
 
-Make it feel like a real strategic HR initiative.`,
+After the call, they should provide:
+- Call transcript or detailed notes
+- Assessment of the candidate's suitability
+- Key observations and recommendations
+
+Make it feel like a real HR training scenario with practical guidance.`,
   };
 
   return scenarios[task.id] || `You are Sarah Chen, HR Manager. Welcome ${userName} to the HR team and introduce the task: "${task.title}". ${task.description}. Create a natural, professional conversation that introduces this task in a realistic workplace context. Ask them how they would approach it.`;
