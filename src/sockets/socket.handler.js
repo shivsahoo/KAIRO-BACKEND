@@ -388,6 +388,94 @@ export function initializeSocket(io) {
           const taskTitle = currentTask.title;
           const taskDescription = currentTask.description;
           const taskOutput = currentTask.expectedOutput;
+          // Create a realistic HR scenario prompt based on the task
+          let taskBriefContent = '';
+          
+          // For hr_t3, hardcode the message with actual candidate details to avoid AI hallucination
+          if (currentTask && currentTask.id === 'hr_t3') {
+            try {
+              const { getSharedResumes } = await import('../services/resume.service.js');
+              const resumes = await getSharedResumes();
+              
+              // Select a candidate for the interview
+              const candidate = resumes
+                .sort((a, b) => (b.relevance || 0) - (a.relevance || 0))
+                .slice(0, 1)[0];
+              
+              // Generate meeting link
+              const meetingLink = `https://meet.company.com/interview/${Date.now()}-${candidate._id.toString().slice(-6)}`;
+              
+              // Generate interview time (next week, weekday, 10 AM - 11 AM)
+              const nextWeek = new Date();
+              nextWeek.setDate(nextWeek.getDate() + 7);
+              nextWeek.setHours(10, 0, 0, 0);
+              
+              // Ensure it's a weekday
+              while (nextWeek.getDay() === 0 || nextWeek.getDay() === 6) {
+                nextWeek.setDate(nextWeek.getDate() + 1);
+              }
+              
+              const startTime = new Date(nextWeek);
+              const endTime = new Date(nextWeek);
+              endTime.setHours(11, 0, 0, 0);
+              
+              // Interviewer details
+              const interviewerName = 'Sarah Chen';
+              const interviewerEmail = 'sarah.chen@company.com';
+              
+              // Format dates/times in readable format
+              const startTimeISO = startTime.toISOString();
+              const endTimeISO = endTime.toISOString();
+              const startTimeReadable = startTime.toLocaleString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit',
+                timeZoneName: 'short'
+              });
+              const endTimeReadable = endTime.toLocaleString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                timeZoneName: 'short'
+              });
+              
+              // Format dates/times in readable format for AI message
+              const interviewDateTime = `${startTimeReadable} to ${endTimeReadable}`;
+              
+              // Replace placeholders with actual values (use readable formats for AI message)
+              scenarioPrompt = scenarioPrompt
+                .replace(/\[CANDIDATE_EMAIL\]/g, candidate.email)
+                .replace(/\[CANDIDATE_NAME\]/g, candidate.candidateName)
+                .replace(/\[START_TIME\]/g, interviewDateTime)
+                .replace(/\[END_TIME\]/g, interviewDateTime)
+                .replace(/\[INTERVIEWER_EMAIL\]/g, interviewerEmail)
+                .replace(/\[INTERVIEWER_NAME\]/g, interviewerName);
+              
+              
+              // Hardcode the message to avoid AI hallucination
+              taskBriefContent = `Welcome to your next task! I need you to schedule an interview with the following details:
+
+**Interview Details:**
+- Candidate Email: ${candidate.email}
+- Candidate Name: ${candidate.candidateName}
+- Interview Date & Time: ${startTimeReadable} to ${endTimeReadable}
+- Interview Type: video
+- Interviewer Email: ${interviewerEmail}
+- Interviewer Name: ${interviewerName}
+- Title: Interview - Python Developer Position
+
+**Task Instructions:**
+1. Schedule the interview using the candidate email (${candidate.email}) and the time slot above
+2. Send an email to the candidate (${candidate.email}) with the resume attached
+3. Make sure to CC the interviewer (${interviewerEmail}) in the email
+
+Please schedule this interview and send the email. Let me know once you've completed both tasks.`;
+            } catch (error) {
+              console.error('Error generating hr_t3 interview details:', error);
+            }
+          }
           
           // Different prompt for first task vs subsequent tasks - be very explicit
           let taskBriefPrompt;
@@ -507,6 +595,27 @@ Your response should be: Acknowledge → Assign task → Explain what's needed. 
             console.error('Error generating task brief:', error);
             // Fallback to direct message
             taskBrief = `Thank you! Please continue with your ${isFirstTask ? 'first' : 'next'} task: ${taskTitle}. ${taskDescription}. The expected output is: ${taskOutput}.`;
+          if (taskBriefContent) {
+            // Use hardcoded message for hr_t3
+            taskBrief = taskBriefContent;
+          } else {
+            // Generate AI message for other tasks
+            let scenarioPrompt = generateHRScenarioPrompt(currentTask, session?.role || 'HR Executive', userName);
+            try {
+              const aiResponse = await generatePersonaResponse(
+                scenarioPrompt,
+                'Manager',
+                {
+                  conversationHistory: [],
+                  currentTask: currentTask,
+                  simulationRole: session?.role,
+                }
+              );
+              taskBrief = aiResponse.reply || `Great! Let me brief you on your first task: ${currentTask.title}. ${currentTask.description}. Let's get started!`;
+            } catch (error) {
+              console.error('Error generating task brief:', error);
+              taskBrief = `Great! Let me brief you on your first task: ${currentTask.title}. ${currentTask.description}. Let's get started!`;
+            }
           }
           
           console.log('✅ Generated AI task brief:', taskBrief);

@@ -24,9 +24,9 @@ export const HR_TASKS = [
   {
     id: 'hr_t4',
     level: 'advanced',
-    title: 'Create a complete HR policy (Remote Work Policy)',
-    description: 'Develop a formal HR policy with rules and exceptions.',
-    expectedOutput: 'PDF / DOCX policy document',
+    title: 'Conduct Mock HR Call (HR Interview)',
+    description: 'Conduct a realistic voice screening call with a candidate for a Software Developer role. AI will act as the candidate and respond naturally.',
+    expectedOutput: 'Call transcript with your questions, candidate responses, and your evaluation notes',
   },
 ];
 
