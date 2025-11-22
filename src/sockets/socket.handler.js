@@ -595,27 +595,11 @@ Your response should be: Acknowledge → Assign task → Explain what's needed. 
             console.error('Error generating task brief:', error);
             // Fallback to direct message
             taskBrief = `Thank you! Please continue with your ${isFirstTask ? 'first' : 'next'} task: ${taskTitle}. ${taskDescription}. The expected output is: ${taskOutput}.`;
+          }
+          
+          // Use hardcoded message if available (for hr_t3)
           if (taskBriefContent) {
-            // Use hardcoded message for hr_t3
             taskBrief = taskBriefContent;
-          } else {
-            // Generate AI message for other tasks
-            let scenarioPrompt = generateHRScenarioPrompt(currentTask, session?.role || 'HR Executive', userName);
-            try {
-              const aiResponse = await generatePersonaResponse(
-                scenarioPrompt,
-                'Manager',
-                {
-                  conversationHistory: [],
-                  currentTask: currentTask,
-                  simulationRole: session?.role,
-                }
-              );
-              taskBrief = aiResponse.reply || `Great! Let me brief you on your first task: ${currentTask.title}. ${currentTask.description}. Let's get started!`;
-            } catch (error) {
-              console.error('Error generating task brief:', error);
-              taskBrief = `Great! Let me brief you on your first task: ${currentTask.title}. ${currentTask.description}. Let's get started!`;
-            }
           }
           
           console.log('✅ Generated AI task brief:', taskBrief);
