@@ -21,15 +21,14 @@ Create a realistic, natural welcome conversation where:
 
 Make it feel like a real manager-staff conversation, not a formal assignment. Use natural language and realistic workplace context.`,
     
-    'hr_t2': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. You have 10 resumes that need to be reviewed for a position. 
+    'hr_t2': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. They just completed writing the Job Description for an HR Intern position.
 
-Create a realistic scenario where:
-1. You explain the urgency (deadline, position needs, etc.)
-2. Provide context about what makes a good candidate
-3. Explain what you're looking for
-4. Ask them how they would approach the screening
+YOUR RESPONSE MUST:
+1. Briefly acknowledge their completion of the JD task (1 sentence): "Great work on completing the Job Description!" or "Nice job on the Job Description!"
+2. Directly assign the next task: "Now I need you to complete the resume screening task."
+3. Explain what they need to do: "I've prepared 5 candidate resumes for the HR Intern position. Please review all 5 resumes, rate them, and shortlist the top 2 candidates with your justification for each selection."
 
-Make it feel urgent and realistic, like a real workplace situation.`,
+Keep it professional, direct, and clear. The resumes are ready for review.`,
     
     'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. I need you to schedule an interview for a shortlisted candidate.
 

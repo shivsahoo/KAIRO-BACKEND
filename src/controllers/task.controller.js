@@ -22,16 +22,14 @@ Create a realistic, natural welcome conversation where:
 
 Make it feel like a real manager-staff conversation, not a formal assignment. Use natural language and realistic workplace context.`,
     
-    'hr_t2': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. I've prepared 10 candidate resumes for an HR Intern position that need to be reviewed. 
+    'hr_t2': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. They just completed writing the Job Description for an HR Intern position.
 
-Create a realistic scenario where:
-1. You explain the urgency (deadline, position needs, etc.)
-2. Provide context about what makes a good candidate for this role
-3. Explain what you're looking for (relevant experience, skills, education, etc.)
-4. Mention that 10 resumes are ready for review and they need to shortlist the top 3 candidates
-5. Ask them to review the resumes, rate them, and provide justification for their top 3 selections
+YOUR RESPONSE MUST:
+1. Briefly acknowledge their completion of the JD task (1 sentence): "Great work on completing the Job Description!" or "Nice job on the Job Description!"
+2. Directly assign the next task: "Now I need you to complete the resume screening task."
+3. Explain what they need to do: "I've prepared 5 candidate resumes for the HR Intern position. Please review all 5 resumes, rate them, and shortlist the top 2 candidates with your justification for each selection."
 
-Make it feel urgent and realistic, like a real workplace situation. The resumes are already prepared and available for review.`,
+Keep it professional, direct, and clear. The resumes are ready for review.`,
     
     'hr_t3': `You are Sarah Chen, HR Manager. ${userName} is your HR Executive. I need you to schedule an interview for a shortlisted candidate.
 
@@ -552,15 +550,15 @@ This is an excellent opportunity for a Python developer to work on challenging p
       meta: { score: evaluation.score, feedback: evaluation.feedback },
     });
 
-    // Check if score is 5 or above (0-10 scale) before moving to next task
-    const MIN_PASSING_SCORE = 5;
+    // Check if score is 3 or above (0-10 scale) before moving to next task
+    const MIN_PASSING_SCORE = 3;
     const score = evaluation.score || 0;
     const canProceed = score >= MIN_PASSING_SCORE;
 
     let nextTask = null;
     let nextTaskMessage = null;
 
-    // Only move to next task if score is 5 or above
+    // Only move to next task if score is 3 or above
     if (canProceed) {
       // Move to next task
       const nextTaskIndex = getNextTaskIndex(session.currentTaskIndex);
@@ -583,6 +581,13 @@ This is an excellent opportunity for a Python developer to work on challenging p
       // Generate AI message for the new task
       try {
         let nextTaskMessageContent = '';
+        
+        // For hr_t2, hardcode the message after completing JD task
+        if (nextTask.id === 'hr_t2') {
+          nextTaskMessageContent = `Great work on completing the Job Description! Now I need you to complete the resume screening task.
+
+I've prepared 5 candidate resumes for the HR Intern position. Please review all 5 resumes, rate them, and shortlist the top 2 candidates with your justification for each selection.`;
+        }
         
         // For hr_t3, hardcode the message with actual candidate details to avoid AI hallucination
         if (nextTask.id === 'hr_t3') {
@@ -633,6 +638,11 @@ This is an excellent opportunity for a Python developer to work on challenging p
             timeZoneName: 'short'
           });
           
+          // Generate resume download URL - use the API base URL from environment or default
+          // Note: Routes are mounted at /api/interviews (with 's')
+          const apiBaseUrl = process.env.API_BASE_URL || process.env.BASE_URL || 'http://localhost:3000';
+          const resumeDownloadUrl = `${apiBaseUrl}/api/interviews/resume/${candidate._id.toString()}/download`;
+          
           // Hardcode the message to avoid AI hallucination
           nextTaskMessageContent = `Great work on the previous task! Now I need you to schedule an interview with the following details:
 
@@ -644,6 +654,7 @@ This is an excellent opportunity for a Python developer to work on challenging p
 - Interviewer Email: ${interviewerEmail}
 - Interviewer Name: ${interviewerName}
 - Title: Interview - Python Developer Position
+- Resume: [Download Resume PDF](${resumeDownloadUrl})
 
 **Task Instructions:**
 1. Schedule the interview using the candidate email (${candidate.email}) and the time slot above
@@ -756,7 +767,7 @@ Please schedule this interview and send the email. Let me know once you've compl
       }
       }
     } else {
-      // Score is below 5 - stay on current task
+      // Score is below 3 - stay on current task
       console.log(`⚠️ Score ${score}/10 is below ${MIN_PASSING_SCORE}. User must retry task.`);
     }
 
@@ -1103,15 +1114,15 @@ This is an excellent opportunity for a Python developer to work on challenging p
       meta: { score: evaluation.score, feedback: evaluation.feedback },
     });
 
-    // Check if score is 5 or above (0-10 scale) before moving to next task
-    const MIN_PASSING_SCORE = 5;
+    // Check if score is 3 or above (0-10 scale) before moving to next task
+    const MIN_PASSING_SCORE = 3;
     const score = evaluation.score || 0;
     const canProceed = score >= MIN_PASSING_SCORE;
 
     let nextTask = null;
     let nextTaskMessage = null;
 
-    // Only move to next task if score is 5 or above
+    // Only move to next task if score is 3 or above
     if (canProceed) {
       // Move to next task
       const nextTaskIndex = getNextTaskIndex(session.currentTaskIndex);

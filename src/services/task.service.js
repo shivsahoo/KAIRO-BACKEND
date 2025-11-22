@@ -10,7 +10,7 @@ export const HR_TASKS = [
   {
     id: 'hr_t2',
     level: 'beginner',
-    title: 'Screen 10 resumes & shortlist top 3 candidates',
+    title: 'Screen 5 resumes & shortlist top 2 candidates',
     description: 'Review provided resumes and justify your selection.',
     expectedOutput: 'Shortlist + justification',
   },

@@ -205,33 +205,28 @@ export async function generateResumesForTask(simulationId) {
 
 /**
  * Generate shared resumes (common for all users) - called on app startup
- * For Python Developer position: 3 good Python resumes, 2 other tech, 5 mixed quality
+ * For Python Developer position: 2 good Python resumes, 1 other tech, 2 mixed quality
  */
 export async function generateSharedResumes() {
   // Check if shared resumes already exist
   const existingResumes = await Resume.find({ isShared: true });
-  if (existingResumes.length >= 10) {
+  if (existingResumes.length >= 5) {
     console.log(`✅ ${existingResumes.length} shared resumes already exist`);
     return existingResumes;
   }
 
   // Calculate how many to generate
-  const needed = 10 - existingResumes.length;
+  const needed = 5 - existingResumes.length;
   console.log(`📄 Generating ${needed} shared resumes for Python Developer position (${existingResumes.length} already exist)...`);
 
   // Resume distribution for Python Developer:
-  // 3 good Python developers, 2 other tech stack, 5 mixed (excellent/average/poor)
+  // 2 good Python developers, 1 other tech stack, 2 mixed (excellent/average/poor)
   const resumeSpecs = [
     { quality: 'good', techStack: 'Python', position: 'Python Developer' },
     { quality: 'good', techStack: 'Python', position: 'Python Developer' },
-    { quality: 'good', techStack: 'Python', position: 'Python Developer' },
     { quality: 'good', techStack: 'Java', position: 'Java Developer' },
-    { quality: 'good', techStack: 'JavaScript', position: 'Full Stack Developer' },
     { quality: 'excellent', techStack: 'Python', position: 'Senior Python Developer' },
     { quality: 'average', techStack: 'Python', position: 'Python Developer' },
-    { quality: 'average', techStack: 'Other', position: 'Software Developer' },
-    { quality: 'poor', techStack: 'Python', position: 'Python Developer' },
-    { quality: 'poor', techStack: 'Other', position: 'Developer' },
   ];
 
   const resumes = [];
@@ -252,7 +247,7 @@ export async function generateSharedResumes() {
       });
 
       resumes.push(resume);
-      console.log(`✅ Generated shared resume ${existingResumes.length + i + 1}/10: ${resume.candidateName} (${resume.quality}, ${spec.techStack})`);
+      console.log(`✅ Generated shared resume ${existingResumes.length + i + 1}/5: ${resume.candidateName} (${resume.quality}, ${spec.techStack})`);
     } catch (error) {
       console.error(`Error generating resume ${i + 1}:`, error);
       // Create a fallback resume
@@ -268,7 +263,7 @@ export async function generateSharedResumes() {
   }
 
   const totalResumes = existingResumes.length + resumes.length;
-  console.log(`✅ Successfully generated ${resumes.length} shared resumes. Total: ${totalResumes}/10`);
+  console.log(`✅ Successfully generated ${resumes.length} shared resumes. Total: ${totalResumes}/5`);
   
   return [...existingResumes, ...resumes];
 }
@@ -279,8 +274,8 @@ export async function generateSharedResumes() {
 export async function initializeSharedResumes() {
   try {
     const resumes = await Resume.find({ isShared: true });
-    if (resumes.length < 10) {
-      console.log(`📄 Initializing shared resumes (${resumes.length}/10 exist)...`);
+    if (resumes.length < 5) {
+      console.log(`📄 Initializing shared resumes (${resumes.length}/5 exist)...`);
       await generateSharedResumes();
     } else {
       console.log(`✅ Shared resumes already initialized (${resumes.length} resumes)`);
@@ -291,10 +286,10 @@ export async function initializeSharedResumes() {
 }
 
 /**
- * Get shared resumes (common for all users)
+ * Get shared resumes (common for all users) - returns up to 5 resumes
  */
 export async function getSharedResumes() {
-  const resumes = await Resume.find({ isShared: true }).sort({ createdAt: 1 });
+  const resumes = await Resume.find({ isShared: true }).sort({ createdAt: 1 }).limit(5);
   return resumes;
 }
 

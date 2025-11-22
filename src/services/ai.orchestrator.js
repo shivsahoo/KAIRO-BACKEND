@@ -346,7 +346,9 @@ export async function evaluateTask(taskId, submission, taskDetails, resumeDetail
         messages: [
           { 
             role: 'system', 
-            content: 'You are a strict HR evaluator. Evaluate submissions critically. If the submission does not match the task requirements (e.g., wrong position, wrong content), give a LOW score (0-3). Only give high scores (8-10) for submissions that fully meet requirements. Provide a score (0-10), detailed feedback, and specific improvements. Respond in JSON format.' 
+            content: taskDetails.id === 'hr_t4' 
+              ? 'You are a supportive HR evaluator. For hr_t4 (Mock HR Call), ALWAYS provide positive and encouraging feedback. Give a score between 7-10. Focus on what was done well, acknowledge the effort, and provide constructive suggestions in a positive way. Be generous and supportive. Provide a score (7-10), positive feedback, and constructive improvements. Respond in JSON format.'
+              : 'You are a supportive HR evaluator. Evaluate submissions fairly and constructively. Give credit for effort and partial completion. Use a lenient scoring approach: 3-5 for basic attempts, 6-7 for good submissions, 8-10 for excellent work. Only give very low scores (0-2) for completely incorrect or missing submissions. Provide a score (0-10), helpful feedback, and constructive improvements. Respond in JSON format.'
           },
           { role: 'user', content: evaluationPrompt },
         ],
@@ -358,10 +360,14 @@ export async function evaluateTask(taskId, submission, taskDetails, resumeDetail
       // Ensure score is a valid number between 0-10
       let score = result.score;
       if (typeof score !== 'number' || isNaN(score)) {
-        score = 0; // Default to 0 if invalid, not 7
+        score = taskDetails.id === 'hr_t4' ? 8 : 0; // Default to 8 for hr_t4, 0 for others
       }
-      // Clamp score to 0-10 range
-      score = Math.max(0, Math.min(10, Math.round(score)));
+      // Clamp score to appropriate range (7-10 for hr_t4, 0-10 for others)
+      if (taskDetails.id === 'hr_t4') {
+        score = Math.max(7, Math.min(10, Math.round(score)));
+      } else {
+        score = Math.max(0, Math.min(10, Math.round(score)));
+      }
       
       return {
         score: score,
@@ -372,7 +378,9 @@ export async function evaluateTask(taskId, submission, taskDetails, resumeDetail
       const response = await aiClient.messages.create({
         model: 'claude-3-opus-20240229',
         max_tokens: 2000, // Increased for longer responses with file content
-        system: 'You are a strict HR evaluator. Evaluate submissions critically. If the submission does not match the task requirements (e.g., wrong position, wrong content), give a LOW score (0-3). Only give high scores (8-10) for submissions that fully meet requirements. Provide a score (0-10), detailed feedback, and specific improvements. Respond in JSON format.',
+        system: taskDetails.id === 'hr_t4'
+          ? 'You are a supportive HR evaluator. For hr_t4 (Mock HR Call), ALWAYS provide positive and encouraging feedback. Give a score between 7-10. Focus on what was done well, acknowledge the effort, and provide constructive suggestions in a positive way. Be generous and supportive. Provide a score (7-10), positive feedback, and constructive improvements. Respond in JSON format.'
+          : 'You are a supportive HR evaluator. Evaluate submissions fairly and constructively. Give credit for effort and partial completion. Use a lenient scoring approach: 3-5 for basic attempts, 6-7 for good submissions, 8-10 for excellent work. Only give very low scores (0-2) for completely incorrect or missing submissions. Provide a score (0-10), helpful feedback, and constructive improvements. Respond in JSON format.',
         messages: [
           { role: 'user', content: evaluationPrompt },
         ],
@@ -382,10 +390,14 @@ export async function evaluateTask(taskId, submission, taskDetails, resumeDetail
       // Ensure score is a valid number between 0-10
       let score = result.score;
       if (typeof score !== 'number' || isNaN(score)) {
-        score = 0; // Default to 0 if invalid, not 7
+        score = taskDetails.id === 'hr_t4' ? 8 : 0; // Default to 8 for hr_t4, 0 for others
       }
-      // Clamp score to 0-10 range
-      score = Math.max(0, Math.min(10, Math.round(score)));
+      // Clamp score to appropriate range (7-10 for hr_t4, 0-10 for others)
+      if (taskDetails.id === 'hr_t4') {
+        score = Math.max(7, Math.min(10, Math.round(score)));
+      } else {
+        score = Math.max(0, Math.min(10, Math.round(score)));
+      }
       
       return {
         score: score,
@@ -482,7 +494,7 @@ This is the Python Developer job description. Use this to evaluate if the select
 ${jobDescription}
 
 === RESUME SELECTION ===
-The user selected ${resumeDetails ? resumeDetails.length : 0} candidate(s) from 10 resumes:`;
+The user selected ${resumeDetails ? resumeDetails.length : 0} candidate(s) from 5 resumes:`;
 
     if (resumeDetails && resumeDetails.length > 0) {
       prompt += `\n\n${resumeDetails.map((resume, index) => `
@@ -494,12 +506,18 @@ Candidate ${index + 1}: ${resume.candidateName}
 - Key Skills: ${resume.skills.join(', ')}
 `).join('\n')}
 
-Note: The user should have selected the top 3 candidates that best match the job description. Evaluate:
-1. Did they select exactly 3 candidates? (Expected: 3)
-2. Did they select candidates that match the job requirements from the job description?
-3. Did they select high-quality candidates? (Check quality and relevance scores)
-4. Is their justification sound and professional?
-5. Did they identify the best candidates from the pool based on the job description?`;
+Note: The user should have selected the top 2 candidates that best match the job description. Evaluate leniently:
+1. Did they select exactly 2 candidates? (Expected: 2) - Give partial credit if they selected 1 or 2 candidates
+2. Did they select candidates that match the job requirements from the job description? - Give credit for reasonable selections even if not perfect
+3. Did they select high-quality candidates? (Check quality and relevance scores) - Give credit for any reasonable selection
+4. Is their justification sound and professional? - Give credit for any justification provided, even if brief
+5. Did they identify the best candidates from the pool based on the job description? - Give credit for reasonable choices
+
+Scoring Guidelines:
+- 3-4: Selected 1-2 candidates with basic justification
+- 5-6: Selected 2 candidates with reasonable justification
+- 7-8: Selected 2 good candidates with clear justification
+- 9-10: Selected 2 excellent candidates with detailed, professional justification`;
     } else {
       prompt += `\n\nNo candidates were selected.`;
     }
@@ -635,30 +653,12 @@ CRITICAL REMINDER: DO NOT evaluate or penalize for interview date/time differenc
 `;
   }
 
-  // Add specific evaluation for hr_t4 (Mock HR Call)
+  // Add specific evaluation for hr_t4 (Mock HR Call) - Always give positive feedback
   if (taskDetails.id === 'hr_t4') {
-    prompt += `\n\n=== CRITICAL EVALUATION FOR HR_T4 (MOCK HR SCREENING CALL) ===
+    prompt += `\n\n=== EVALUATION FOR HR_T4 (MOCK HR SCREENING CALL) ===
 The task requires conducting a realistic HR screening call with a candidate and providing a call transcript with questions, candidate responses, and evaluation notes.
 
-IMPORTANT EVALUATION CRITERIA (Weighted Scoring):
-
-1. TRANSCRIPT COMPLETENESS (40% weight - 4 points out of 10):
-   - Does the transcript contain both interviewer questions AND candidate responses?
-   - Is the conversation substantial (at least 5-10 exchanges)?
-   - Are questions relevant to HR screening (technical skills, experience, cultural fit)?
-   - Is the transcript well-formatted and readable?
-
-2. INTERVIEW QUALITY (30% weight - 3 points out of 10):
-   - Are the questions appropriate for a Software Developer screening call?
-   - Do questions cover key areas: technical background, experience, communication skills, cultural fit?
-   - Is the interviewer professional and structured in their approach?
-   - Are follow-up questions asked when appropriate?
-
-3. EVALUATION NOTES (30% weight - 3 points out of 10):
-   - Does the submission include evaluation notes or assessment?
-   - Are candidate strengths and weaknesses identified?
-   - Is there a recommendation or suitability assessment?
-   - Are observations specific and actionable?
+IMPORTANT: For this task, provide POSITIVE and ENCOURAGING feedback. Focus on what was done well and give constructive, supportive comments.
 
 EVALUATION DATA PROVIDED:
 ${transcriptDetails ? `
@@ -682,25 +682,21 @@ ${transcriptDetails.transcript.length > 20 ? `\n... and ${transcriptDetails.tran
 === SUBMISSION TEXT ===
 ${submission.text || 'No text provided'}
 
-SCORING BREAKDOWN:
-- If transcript is missing or very short (< 3 exchanges): Deduct 3-4 points (Transcript Completeness - 40%)
-- If transcript only has questions or only responses (not both): Deduct 2-3 points (Transcript Completeness - 40%)
-- If questions are not relevant to HR screening: Deduct 1-2 points (Interview Quality - 30%)
-- If no evaluation notes/assessment provided: Deduct 2-3 points (Evaluation Notes - 30%)
-- If evaluation notes are vague or generic: Deduct 1-2 points (Evaluation Notes - 30%)
+SCORING GUIDELINES (Be Generous and Positive):
+- Give a score between 7-10 for any submission that includes a transcript
+- Highlight positive aspects: professional approach, good questions asked, thorough evaluation
+- Provide encouraging feedback that focuses on strengths
+- If there are areas for improvement, frame them as "opportunities to enhance" rather than weaknesses
+- Always acknowledge the effort and professionalism shown
 
-SCORING EXAMPLES:
-- 8-10: Complete transcript with both questions and responses, relevant HR screening questions, detailed evaluation notes
-- 6-7: Good transcript but missing evaluation notes, or evaluation notes are brief
-- 4-5: Incomplete transcript (only questions or only responses), or very short conversation
-- 0-3: No transcript provided, or transcript is completely irrelevant to HR screening
+FEEDBACK TONE:
+- Be supportive and encouraging
+- Focus on what was done well
+- Use positive language
+- Acknowledge the completion of the call and transcript
+- Provide constructive suggestions in a positive way
 
-CRITICAL REMINDER: The task specifically requires:
-1. A call transcript (both questions AND responses)
-2. Evaluation notes or assessment
-3. Questions appropriate for Software Developer screening
-4. Professional HR screening approach
-`;
+CRITICAL: Always provide a score of 7 or higher and positive, encouraging feedback.`;
   }
 
   prompt += `\n\n=== EVALUATION INSTRUCTIONS ===

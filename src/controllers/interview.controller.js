@@ -752,5 +752,105 @@ export const getTranscript = async (req, res) => {
   }
 };
 
+/**
+ * Download resume as PDF
+ */
+export const downloadResumePDF = async (req, res) => {
+  try {
+    const { resumeId } = req.params;
+    const userId = req.user.id;
+
+    // Find the resume
+    const resume = await Resume.findById(resumeId);
+    if (!resume) {
+      return res.status(404).json({ message: 'Resume not found' });
+    }
+
+    // Generate PDF using PDFKit
+    const PDFDocument = (await import('pdfkit')).default;
+    const doc = new PDFDocument({
+      margin: 50,
+      size: 'A4',
+    });
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${resume.candidateName.replace(/\s+/g, '_')}_Resume.pdf"`);
+
+    // Pipe PDF to response
+    doc.pipe(res);
+
+    // Add resume content
+    doc.fontSize(24).font('Helvetica-Bold').text(resume.candidateName, { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica').text(resume.email, { align: 'center' });
+    if (resume.phone) {
+      doc.text(resume.phone, { align: 'center' });
+    }
+    doc.moveDown(2);
+
+    // Summary
+    if (resume.summary) {
+      doc.fontSize(16).font('Helvetica-Bold').text('Summary');
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica').text(resume.summary);
+      doc.moveDown(2);
+    }
+
+    // Experience
+    if (resume.experience) {
+      doc.fontSize(16).font('Helvetica-Bold').text('Experience');
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica').text(`${resume.experience} years`);
+      doc.moveDown(2);
+    }
+
+    // Skills
+    if (resume.skills && resume.skills.length > 0) {
+      doc.fontSize(16).font('Helvetica-Bold').text('Skills');
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica').text(resume.skills.join(', '));
+      doc.moveDown(2);
+    }
+
+    // Education
+    if (resume.education) {
+      doc.fontSize(16).font('Helvetica-Bold').text('Education');
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica').text(resume.education);
+      doc.moveDown(2);
+    }
+
+    // Work History
+    if (resume.workHistory && resume.workHistory.length > 0) {
+      doc.fontSize(16).font('Helvetica-Bold').text('Work History');
+      doc.moveDown(0.5);
+      resume.workHistory.forEach((work) => {
+        doc.fontSize(14).font('Helvetica-Bold').text(work.position || 'Position');
+        doc.fontSize(12).font('Helvetica').text(`${work.company || 'Company'} | ${work.duration || 'Duration'}`);
+        if (work.description) {
+          doc.moveDown(0.3);
+          doc.fontSize(11).font('Helvetica').text(work.description);
+        }
+        doc.moveDown(1);
+      });
+    }
+
+    // Full resume text if available
+    if (resume.resumeText) {
+      doc.addPage();
+      doc.fontSize(16).font('Helvetica-Bold').text('Full Resume');
+      doc.moveDown(1);
+      doc.fontSize(11).font('Helvetica').text(resume.resumeText);
+    }
+
+    // Finalize PDF
+    doc.end();
+  } catch (error) {
+    console.error('Download resume PDF error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
 // Candidate confirmation response removed - no conflicts or confirmations needed
 

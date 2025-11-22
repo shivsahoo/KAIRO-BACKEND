@@ -10,6 +10,8 @@ router.use(authenticate);
 // Routes
 router.get('/candidates', interviewController.getCandidates);
 router.get('/time-slots', interviewController.getAvailableTimeSlots);
+// Resume download route - place before /interviews to avoid route conflicts
+router.get('/resume/:resumeId/download', interviewController.downloadResumePDF);
 router.get('/interviews', interviewController.getInterviews);
 router.post('/schedule', interviewController.createInterviewSchedule);
 router.post('/send-email', interviewController.sendInterviewEmail);
